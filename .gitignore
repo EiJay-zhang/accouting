@@ -46,3 +46,4 @@ app.*.map.json
 
 server/*.db
 server/__pycache__/
+server/.env

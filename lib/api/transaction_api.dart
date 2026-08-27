@@ -60,6 +60,28 @@ class TransactionApi {
     return Transaction.fromJson(row);
   }
 
+  Future<Transaction> updateTransaction({
+    required int id,
+    required String title,
+    required int categoryId,
+    required double amount,
+    required TransactionType type,
+    required DateTime date,
+  }) async {
+    final row = await _client.putJson('/api/transactions/$id', {
+      'title': title,
+      'category_id': categoryId,
+      'amount': amount,
+      'type': type.name,
+      'date': _formatDate(date),
+    });
+    return Transaction.fromJson(row);
+  }
+
+  Future<void> deleteTransaction(int id) {
+    return _client.delete('/api/transactions/$id');
+  }
+
   String _formatDate(DateTime value) {
     final year = value.year.toString().padLeft(4, '0');
     final month = value.month.toString().padLeft(2, '0');

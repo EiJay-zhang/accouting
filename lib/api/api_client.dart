@@ -51,6 +51,35 @@ class ApiClient {
     return _decodeObject(response);
   }
 
+  Future<Map<String, dynamic>> putJson(
+    String path,
+    Map<String, dynamic> body,
+  ) async {
+    final response = await _client.put(
+      _uri(path),
+      headers: const {'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    return _decodeObject(response);
+  }
+
+  Future<void> delete(String path) async {
+    final response = await _client.delete(_uri(path));
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return;
+    }
+
+    String message = response.reasonPhrase ?? 'Request failed';
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map && decoded['detail'] != null) {
+        message = decoded['detail'].toString();
+      }
+    } catch (_) {}
+
+    throw ApiException(response.statusCode, message);
+  }
+
   Map<String, dynamic> _decodeObject(http.Response response) {
     final body = _decodeBody(response);
     if (body is! Map<String, dynamic>) {

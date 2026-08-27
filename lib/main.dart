@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
+
+import 'config/api_config.dart';
 import 'constants/app_colors.dart';
 import 'pages/home_page.dart';
 import 'pages/add_transaction_page.dart';
-import 'pages/placeholder_pages.dart';
+import 'pages/bills_page.dart';
+import 'pages/report_page.dart';
+import 'pages/settings_page.dart';
+import 'pages/ai_chat_page.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await ApiConfig.load();
   runApp(const MyApp());
 }
 
@@ -39,14 +46,22 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
   final GlobalKey<HomePageState> _homePageKey = GlobalKey<HomePageState>();
+  final GlobalKey<BillsPageState> _billsPageKey = GlobalKey<BillsPageState>();
+  final GlobalKey<ReportPageState> _reportPageKey = GlobalKey<ReportPageState>();
 
   late final List<Widget> _pages = [
     HomePage(key: _homePageKey),
-    const BillsPage(),
-    const SizedBox.shrink(),
-    const ReportPage(),
-    const SettingsPage(),
+    BillsPage(key: _billsPageKey),
+    const AiChatPage(),
+    ReportPage(key: _reportPageKey),
+    SettingsPage(onApiConfigChanged: _refreshAllPages),
   ];
+
+  void _refreshAllPages() {
+    _homePageKey.currentState?.refresh();
+    _billsPageKey.currentState?.refresh();
+    _reportPageKey.currentState?.refresh();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,60 +72,67 @@ class _MainShellState extends State<MainShell> {
         children: _pages,
       ),
       bottomNavigationBar: _buildBottomNav(),
-      floatingActionButton: _buildFab(),
-      floatingActionButtonLocation:
-          FloatingActionButtonLocation.centerDocked,
+      floatingActionButton: _shouldShowFab ? _buildFab() : null,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
+
+  bool get _shouldShowFab => _currentIndex != 2 && _currentIndex != 4;
 
   Widget _buildBottomNav() {
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.navBar,
-        border: Border(
-          top: BorderSide(
-            color: AppColors.divider,
-            width: 0.5,
+    return NavigationBarTheme(
+      data: NavigationBarThemeData(
+        backgroundColor: AppColors.navBar,
+        indicatorColor: AppColors.addBtnBg.withValues(alpha: 0.22),
+        surfaceTintColor: Colors.transparent,
+        height: 64,
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          final selected = states.contains(WidgetState.selected);
+          return TextStyle(
+            fontSize: 11,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+            color: selected ? AppColors.navActive : AppColors.navItem,
+          );
+        }),
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          final selected = states.contains(WidgetState.selected);
+          return IconThemeData(
+            size: 22,
+            color: selected ? AppColors.navActive : AppColors.navItem,
+          );
+        }),
+      ),
+      child: NavigationBar(
+        selectedIndex: _currentIndex,
+        onDestinationSelected: (index) => setState(() => _currentIndex = index),
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.book_outlined),
+            selectedIcon: Icon(Icons.book),
+            label: '记账',
           ),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildNavItem(0, '记账', Icons.book),
-          _buildNavItem(1, '账单', Icons.receipt_long),
-          const SizedBox(width: 56),
-          _buildNavItem(3, '报告', Icons.bar_chart),
-          _buildNavItem(4, '设置', Icons.settings),
+          NavigationDestination(
+            icon: Icon(Icons.receipt_long_outlined),
+            selectedIcon: Icon(Icons.receipt_long),
+            label: '账单',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.auto_awesome_outlined),
+            selectedIcon: Icon(Icons.auto_awesome),
+            label: 'AI',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.bar_chart_outlined),
+            selectedIcon: Icon(Icons.bar_chart),
+            label: '报告',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings),
+            label: '设置',
+          ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildNavItem(int index, String label, IconData icon) {
-    final isActive = _currentIndex == index;
-    final color = isActive ? AppColors.navActive : AppColors.navItem;
-
-    return GestureDetector(
-      onTap: () => setState(() => _currentIndex = index),
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontSize: 11,
-                fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -124,7 +146,7 @@ class _MainShellState extends State<MainShell> {
           ),
         );
         if (saved == true && mounted) {
-          _homePageKey.currentState?.refresh();
+          _refreshAllPages();
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('已保存')),
           );

@@ -43,6 +43,28 @@ class TransactionService {
       date: date,
     );
   }
+
+  Future<Transaction> updateTransaction({
+    required Transaction transaction,
+    required String title,
+    required TransactionCategory category,
+    required double amount,
+    required TransactionType type,
+    required DateTime date,
+  }) {
+    return _api.updateTransaction(
+      id: transaction.id,
+      title: title,
+      categoryId: category.id,
+      amount: amount,
+      type: type,
+      date: date,
+    );
+  }
+
+  Future<void> deleteTransaction(int id) {
+    return _api.deleteTransaction(id);
+  }
 }
 
 class HomeData {

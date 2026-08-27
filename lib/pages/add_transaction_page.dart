@@ -6,7 +6,11 @@ import '../models/transaction.dart';
 import '../services/transaction_service.dart';
 
 class AddTransactionPage extends StatefulWidget {
-  const AddTransactionPage({super.key});
+  final Transaction? transaction;
+
+  const AddTransactionPage({super.key, this.transaction});
+
+  bool get isEditing => transaction != null;
 
   @override
   State<AddTransactionPage> createState() => _AddTransactionPageState();
@@ -20,6 +24,7 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
   TransactionType _selectedType = TransactionType.expense;
   List<TransactionCategory> _categories = [];
   TransactionCategory? _selectedCategory;
+  late DateTime _selectedDate;
   bool _loadingCategories = true;
   bool _submitting = false;
   String? _loadError;
@@ -27,6 +32,17 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
   @override
   void initState() {
     super.initState();
+    final existing = widget.transaction;
+    if (existing != null) {
+      _selectedType = existing.type;
+      _amountController.text = existing.amount % 1 == 0
+          ? existing.amount.toInt().toString()
+          : existing.amount.toStringAsFixed(2);
+      _titleController.text = existing.title;
+      _selectedDate = existing.date;
+    } else {
+      _selectedDate = DateTime.now();
+    }
     _loadCategories();
   }
 
@@ -34,9 +50,22 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
     try {
       final categories = await _service.getCategories();
       if (!mounted) return;
+
+      TransactionCategory? selected;
+      final existing = widget.transaction;
+      if (existing != null) {
+        for (final cat in categories) {
+          if (cat.id == existing.category.id) {
+            selected = cat;
+            break;
+          }
+        }
+      }
+      selected ??= categories.isNotEmpty ? categories.first : null;
+
       setState(() {
         _categories = categories;
-        _selectedCategory = categories.isNotEmpty ? categories.first : null;
+        _selectedCategory = selected;
         _loadingCategories = false;
         _loadError = null;
       });
@@ -65,9 +94,9 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
       appBar: AppBar(
         backgroundColor: AppColors.bgPrimary,
         elevation: 0,
-        title: const Text(
-          '记一笔',
-          style: TextStyle(
+        title: Text(
+          widget.isEditing ? '编辑账单' : '记一笔',
+          style: const TextStyle(
             color: AppColors.textPrimary,
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -78,6 +107,13 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
           icon: const Icon(Icons.close, color: AppColors.textPrimary),
           onPressed: _submitting ? null : () => Navigator.pop(context),
         ),
+        actions: [
+          if (widget.isEditing)
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: AppColors.expenseRed),
+              onPressed: _submitting ? null : _confirmDelete,
+            ),
+        ],
       ),
       body: SafeArea(
         child: _loadingCategories
@@ -86,7 +122,7 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
               )
             : _loadError != null
                 ? _buildLoadError()
-                : Padding(
+                : SingleChildScrollView(
                     padding: const EdgeInsets.all(20),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -96,10 +132,13 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
                         _buildAmountInput(),
                         const SizedBox(height: 16),
                         _buildTitleInput(),
+                        const SizedBox(height: 16),
+                        _buildDateSelector(),
                         const SizedBox(height: 20),
                         _buildCategorySelector(),
-                        const Spacer(),
+                        const SizedBox(height: 24),
                         _buildSubmitButton(),
+                        const SizedBox(height: 20),
                       ],
                     ),
                   ),
@@ -273,6 +312,58 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
     );
   }
 
+  Widget _buildDateSelector() {
+    final label =
+        '${_selectedDate.year}年${_selectedDate.month}月${_selectedDate.day}日';
+
+    return InkWell(
+      onTap: _submitting ? null : _pickDate,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.bgSecondary,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.calendar_today, color: AppColors.textTertiary, size: 18),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
+            ),
+            const Spacer(),
+            const Icon(Icons.chevron_right, color: AppColors.textTertiary, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: AppColors.addBtnBg,
+              surface: AppColors.bgSecondary,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() => _selectedDate = picked);
+    }
+  }
+
   Widget _buildCategorySelector() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -300,7 +391,7 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
           ),
           itemBuilder: (context, index) {
             final cat = _categories[index];
-            final isSelected = cat == _selectedCategory;
+            final isSelected = _selectedCategory?.id == cat.id;
             return GestureDetector(
               onTap: _submitting
                   ? null
@@ -364,9 +455,9 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
                   color: Colors.white,
                 ),
               )
-            : const Text(
-                '保存',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            : Text(
+                widget.isEditing ? '保存修改' : '保存',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
       ),
     );
@@ -389,17 +480,29 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
       return;
     }
 
+    final title = _titleController.text.isEmpty ? category.name : _titleController.text;
+
     setState(() => _submitting = true);
 
     try {
-      await _service.addTransaction(
-        title: _titleController.text.isEmpty
-            ? category.name
-            : _titleController.text,
-        category: category,
-        amount: amount,
-        type: _selectedType,
-      );
+      if (widget.isEditing) {
+        await _service.updateTransaction(
+          transaction: widget.transaction!,
+          title: title,
+          category: category,
+          amount: amount,
+          type: _selectedType,
+          date: _selectedDate,
+        );
+      } else {
+        await _service.addTransaction(
+          title: title,
+          category: category,
+          amount: amount,
+          type: _selectedType,
+          date: _selectedDate,
+        );
+      }
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (error) {
@@ -407,6 +510,51 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
       final message = error is ApiException
           ? error.message
           : '保存失败，请稍后重试';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
+    }
+  }
+
+  Future<void> _confirmDelete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.bgSecondary,
+        title: const Text('删除账单', style: TextStyle(color: AppColors.textPrimary)),
+        content: const Text(
+          '确定要删除这条账单吗？此操作不可撤销。',
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('删除', style: TextStyle(color: AppColors.expenseRed)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _submitting = true);
+    try {
+      await _service.deleteTransaction(widget.transaction!.id);
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (error) {
+      if (!mounted) return;
+      final message = error is ApiException
+          ? error.message
+          : '删除失败，请稍后重试';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message)),
       );
