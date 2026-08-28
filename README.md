@@ -144,6 +144,81 @@ lsof -i :8080    # 确认前端端口在监听
 
 ---
 
+## 真机运行与打包
+
+App 可以运行在 Android / iOS 真机上。手机上的 App 仍需要通过 HTTP 访问你电脑或服务器上的后端 API。
+
+### 环境准备
+
+| 平台 | 需要安装 |
+|------|----------|
+| Android 真机 | [Android Studio](https://developer.android.com/studio) + SDK，开启 USB 调试 |
+| iPhone 真机 | Xcode（App Store）+ Apple 开发者账号（免费账号可本机调试） |
+
+当前机器若 `flutter doctor` 提示 Android SDK / Xcode 未就绪，需先完成安装。
+
+### 第一步：让后端可被手机访问
+
+手机不能访问 `127.0.0.1`（那是手机自己）。后端需监听所有网卡，且电脑与手机在同一 Wi‑Fi：
+
+```bash
+cd server
+python3 -m uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+查电脑局域网 IP：
+
+```bash
+ipconfig getifaddr en0
+# 例如得到 192.168.1.100
+```
+
+手机浏览器访问 `http://192.168.1.100:8000/api/health` 应返回 `{"status":"ok"}`。
+
+### 第二步：连接真机并运行
+
+**Android：**
+
+```bash
+# USB 连接手机，开启开发者模式与 USB 调试
+flutter devices
+flutter run --dart-define=API_BASE_URL=http://192.168.1.100:8000
+```
+
+**iOS：**
+
+```bash
+# USB 连接 iPhone，Xcode 中信任开发者
+flutter devices
+flutter run --dart-define=API_BASE_URL=http://192.168.1.100:8000
+```
+
+也可安装 App 后在 **设置** 页手动填写 API 地址 `http://192.168.1.100:8000`。
+
+### 第三步：打包安装包
+
+**Android APK（可直接装到手机）：**
+
+```bash
+flutter build apk --release --dart-define=API_BASE_URL=http://192.168.1.100:8000
+# 输出：build/app/outputs/flutter-apk/app-release.apk
+```
+
+**iOS（需 Mac + Xcode）：**
+
+```bash
+flutter build ios --release --dart-define=API_BASE_URL=http://192.168.1.100:8000
+# 然后用 Xcode 打开 ios/Runner.xcworkspace 签名并安装到设备
+```
+
+### 注意事项
+
+- 打包时 `--dart-define=API_BASE_URL=...` 需改成你实际的后端地址；上线生产环境建议使用 HTTPS 域名
+- AI 对话依赖后端 `server/.env` 中的 DeepSeek Key，与运行平台无关
+- 本机开发默认允许 HTTP 明文请求（Android `usesCleartextTraffic`、iOS 本地网络例外已配置）
+
+---
+
 ## API 接口
 
 **Base URL：** `http://127.0.0.1:8000`
