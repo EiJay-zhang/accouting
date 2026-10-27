@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../api/chat_api.dart';
+import '../config/chat_model_config.dart';
 import '../constants/app_colors.dart';
 import '../models/chat_message.dart';
 
@@ -17,7 +18,7 @@ class _AiChatPageState extends State<AiChatPage> {
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessage> _messages = [];
-  final List<String> _suggestions = const [
+  final List<String> _suggestions = [
     '分析我本月支出结构',
     '有哪些地方可以省钱？',
     '帮我总结本月收支情况',
@@ -27,8 +28,6 @@ class _AiChatPageState extends State<AiChatPage> {
   bool _loading = false;
   bool _includeContext = true;
   bool _checkingStatus = true;
-  bool _apiConfigured = false;
-  String _modelName = 'deepseek-chat';
 
   @override
   void initState() {
@@ -47,11 +46,8 @@ class _AiChatPageState extends State<AiChatPage> {
     try {
       final status = await _chatApi.fetchStatus();
       if (!mounted) return;
-      setState(() {
-        _apiConfigured = status.configured;
-        _modelName = status.model;
-        _checkingStatus = false;
-      });
+      ChatModelConfig.applyProviders(status.providers);
+      setState(() => _checkingStatus = false);
     } catch (_) {
       if (!mounted) return;
       setState(() => _checkingStatus = false);
@@ -71,11 +67,16 @@ class _AiChatPageState extends State<AiChatPage> {
 
     try {
       final now = DateTime.now();
+      final history = _includeContext
+          ? _messages
+          : _messages.where((message) => message.role == ChatRole.user).toList();
       final reply = await _chatApi.sendMessage(
-        messages: _messages,
+        messages: history,
         includeContext: _includeContext,
         year: now.year,
         month: now.month,
+        provider: ChatModelConfig.selection.value.providerId,
+        model: ChatModelConfig.selection.value.modelId,
       );
       if (!mounted) return;
       setState(() {
@@ -105,7 +106,7 @@ class _AiChatPageState extends State<AiChatPage> {
       if (!_scrollController.hasClients) return;
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 250),
+        duration: Duration(milliseconds: 250),
         curve: Curves.easeOut,
       );
     });
@@ -118,12 +119,12 @@ class _AiChatPageState extends State<AiChatPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bgPrimary,
+      backgroundColor: AppColors.of(context).bgPrimary,
       body: SafeArea(
         child: Column(
           children: [
             _buildHeader(),
-            if (!_checkingStatus && !_apiConfigured) _buildConfigWarning(),
+            if (!_checkingStatus) _buildConfigWarning(),
             Expanded(child: _buildMessageList()),
             if (_messages.isEmpty) _buildSuggestions(),
             _buildInputBar(),
@@ -134,54 +135,67 @@ class _AiChatPageState extends State<AiChatPage> {
   }
 
   Widget _buildHeader() {
+    final canPop = Navigator.canPop(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
+      padding: EdgeInsets.fromLTRB(canPop ? 4 : 20, 16, 12, 8),
       child: Row(
         children: [
+          if (canPop)
+            IconButton(
+              tooltip: '返回',
+              onPressed: () => Navigator.pop(context),
+              icon: Icon(Icons.arrow_back, color: AppColors.of(context).textPrimary),
+            ),
           Container(
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: AppColors.addBtnBg.withValues(alpha: 0.2),
+              color: AppColors.of(context).addBtnBg.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.auto_awesome, color: AppColors.addBtnBg),
+            child: Icon(Icons.auto_awesome, color: AppColors.of(context).addBtnBg),
           ),
-          const SizedBox(width: 12),
+          SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'AI 记账助手',
                   style: TextStyle(
-                    color: AppColors.textPrimary,
+                    color: AppColors.of(context).textPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                Text(
-                  'Powered by $_modelName',
-                  style: const TextStyle(
-                    color: AppColors.textTertiary,
-                    fontSize: 12,
-                  ),
+                ValueListenableBuilder<ChatSelection>(
+                  valueListenable: ChatModelConfig.selection,
+                  builder: (context, _, _) {
+                    final modelName = ChatModelConfig.current.name;
+                    return Text(
+                      _includeContext
+                          ? '已带入本月账单 · $modelName'
+                          : '未带入账单 · $modelName',
+                      style: TextStyle(
+                        color: _includeContext
+                            ? AppColors.of(context).addBtnBg
+                            : AppColors.of(context).textTertiary,
+                        fontSize: 12,
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
           ),
-          IconButton(
-            tooltip: '带入记账数据',
+          _ContextToggle(
+            enabled: _includeContext,
             onPressed: () => setState(() => _includeContext = !_includeContext),
-            icon: Icon(
-              _includeContext ? Icons.analytics : Icons.analytics_outlined,
-              color: _includeContext ? AppColors.addBtnBg : AppColors.textTertiary,
-            ),
           ),
           IconButton(
             tooltip: '清空对话',
             onPressed: _messages.isEmpty ? null : _clearChat,
-            icon: const Icon(Icons.delete_outline, color: AppColors.textTertiary),
+            icon: Icon(Icons.delete_outline, color: AppColors.of(context).textTertiary),
           ),
         ],
       ),
@@ -189,54 +203,67 @@ class _AiChatPageState extends State<AiChatPage> {
   }
 
   Widget _buildConfigWarning() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.expenseRed.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.expenseRed.withValues(alpha: 0.3)),
-      ),
-      child: const Text(
-        'DeepSeek API Key 未配置。请在 server/.env 中设置 DEEPSEEK_API_KEY 后重启后端。',
-        style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-      ),
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        ChatModelConfig.selection,
+        ChatModelConfig.providers,
+      ]),
+      builder: (context, _) {
+        final provider = ChatModelConfig.selectedProvider;
+        if (provider == null || provider.configured) {
+          return const SizedBox.shrink();
+        }
+        final keyName = provider.keyEnv.isEmpty ? '对应的 API Key' : provider.keyEnv;
+        return Container(
+          margin: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.of(context).expenseRed.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.of(context).expenseRed.withValues(alpha: 0.3)),
+          ),
+          child: Text(
+            '${provider.name} API Key 未配置。请在 server/.env 中设置 $keyName 后重启后端。',
+            style: TextStyle(color: AppColors.of(context).textSecondary, fontSize: 12),
+          ),
+        );
+      },
     );
   }
 
   Widget _buildMessageList() {
     if (_checkingStatus) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.addBtnBg),
+      return Center(
+        child: CircularProgressIndicator(color: AppColors.of(context).addBtnBg),
       );
     }
 
     if (_messages.isEmpty) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(32),
+          padding: EdgeInsets.all(32),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
                 Icons.smart_toy_outlined,
                 size: 64,
-                color: AppColors.textTertiary.withValues(alpha: 0.5),
+                color: AppColors.of(context).textTertiary.withValues(alpha: 0.5),
               ),
-              const SizedBox(height: 16),
-              const Text(
+              SizedBox(height: 16),
+              Text(
                 '你好，我是 AI 记账助手',
                 style: TextStyle(
-                  color: AppColors.textPrimary,
+                  color: AppColors.of(context).textPrimary,
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 8),
-              const Text(
+              SizedBox(height: 8),
+              Text(
                 '我可以帮你分析收支、解读消费结构、提供省钱建议。',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.textTertiary, fontSize: 14),
+                style: TextStyle(color: AppColors.of(context).textTertiary, fontSize: 14),
               ),
             ],
           ),
@@ -246,7 +273,7 @@ class _AiChatPageState extends State<AiChatPage> {
 
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+      padding: EdgeInsets.fromLTRB(20, 8, 20, 16),
       itemCount: _messages.length + (_loading ? 1 : 0),
       itemBuilder: (context, index) {
         if (index == _messages.length) {
@@ -262,15 +289,15 @@ class _AiChatPageState extends State<AiChatPage> {
       height: 44,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+        padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
         itemCount: _suggestions.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        separatorBuilder: (_, _) => SizedBox(width: 8),
         itemBuilder: (context, index) {
           return ActionChip(
             label: Text(_suggestions[index]),
-            labelStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
-            backgroundColor: AppColors.bgSecondary,
-            side: BorderSide(color: AppColors.divider.withValues(alpha: 0.5)),
+            labelStyle: TextStyle(color: AppColors.of(context).textSecondary, fontSize: 12),
+            backgroundColor: AppColors.of(context).bgSecondary,
+            side: BorderSide(color: AppColors.of(context).divider.withValues(alpha: 0.5)),
             onPressed: _loading ? null : () => _sendMessage(_suggestions[index]),
           );
         },
@@ -280,18 +307,18 @@ class _AiChatPageState extends State<AiChatPage> {
 
   Widget _buildInputBar() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      decoration: const BoxDecoration(
-        color: AppColors.navBar,
-        border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+      padding: EdgeInsets.fromLTRB(16, 8, 16, 16),
+      decoration: BoxDecoration(
+        color: AppColors.of(context).navBar,
+        border: Border(top: BorderSide(color: AppColors.of(context).divider, width: 0.5)),
       ),
       child: Row(
         children: [
           Expanded(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
-                color: AppColors.bgSecondary,
+                color: AppColors.of(context).bgSecondary,
                 borderRadius: BorderRadius.circular(24),
               ),
               child: TextField(
@@ -299,10 +326,10 @@ class _AiChatPageState extends State<AiChatPage> {
                 enabled: !_loading,
                 maxLines: 3,
                 minLines: 1,
-                style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
-                decoration: const InputDecoration(
+                style: TextStyle(color: AppColors.of(context).textPrimary, fontSize: 15),
+                decoration: InputDecoration(
                   hintText: '问我任何记账相关的问题...',
-                  hintStyle: TextStyle(color: AppColors.textTertiary),
+                  hintStyle: TextStyle(color: AppColors.of(context).textTertiary),
                   border: InputBorder.none,
                   contentPadding: EdgeInsets.symmetric(vertical: 12),
                 ),
@@ -310,9 +337,9 @@ class _AiChatPageState extends State<AiChatPage> {
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: 8),
           Material(
-            color: AppColors.addBtnBg,
+            color: AppColors.of(context).addBtnBg,
             borderRadius: BorderRadius.circular(24),
             child: InkWell(
               onTap: _loading ? null : () => _sendMessage(),
@@ -322,7 +349,7 @@ class _AiChatPageState extends State<AiChatPage> {
                 height: 48,
                 alignment: Alignment.center,
                 child: _loading
-                    ? const SizedBox(
+                    ? SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(
@@ -330,7 +357,7 @@ class _AiChatPageState extends State<AiChatPage> {
                           color: Colors.white,
                         ),
                       )
-                    : const Icon(Icons.send_rounded, color: Colors.white, size: 22),
+                    : Icon(Icons.send_rounded, color: Colors.white, size: 22),
               ),
             ),
           ),
@@ -341,23 +368,23 @@ class _AiChatPageState extends State<AiChatPage> {
 
   Widget _buildTypingIndicator() {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: AppColors.bgSecondary,
+              color: AppColors.of(context).bgSecondary,
               borderRadius: BorderRadius.circular(16),
             ),
-            child: const SizedBox(
+            child: SizedBox(
               width: 48,
               height: 16,
               child: Center(
                 child: Text(
                   '...',
                   style: TextStyle(
-                    color: AppColors.textTertiary,
+                    color: AppColors.of(context).textTertiary,
                     fontSize: 18,
                     letterSpacing: 2,
                   ),
@@ -366,6 +393,58 @@ class _AiChatPageState extends State<AiChatPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ContextToggle extends StatelessWidget {
+  final bool enabled;
+  final VoidCallback onPressed;
+
+  const _ContextToggle({
+    required this.enabled,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final color = enabled ? colors.addBtnBg : colors.textTertiary;
+    return Tooltip(
+      message: enabled ? '关闭后不再带入本月账单' : '打开后带入本月账单',
+      child: Material(
+        color: enabled ? colors.addBtnBg.withValues(alpha: 0.16) : Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: enabled ? colors.addBtnBg : colors.divider),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  enabled ? Icons.analytics : Icons.analytics_outlined,
+                  size: 18,
+                  color: color,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  enabled ? '本月账单' : '不带账单',
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -381,7 +460,7 @@ class _MessageBubble extends StatelessWidget {
     final isUser = message.role == ChatRole.user;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.only(bottom: 12),
       child: Row(
         mainAxisAlignment:
             isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
@@ -390,19 +469,19 @@ class _MessageBubble extends StatelessWidget {
           if (!isUser) ...[
             CircleAvatar(
               radius: 16,
-              backgroundColor: AppColors.addBtnBg.withValues(alpha: 0.2),
-              child: const Icon(Icons.auto_awesome, size: 16, color: AppColors.addBtnBg),
+              backgroundColor: AppColors.of(context).addBtnBg.withValues(alpha: 0.2),
+              child: Icon(Icons.auto_awesome, size: 16, color: AppColors.of(context).addBtnBg),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: 8),
           ],
           Flexible(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: isUser ? AppColors.addBtnBg : AppColors.bgSecondary,
+                color: isUser ? AppColors.of(context).addBtnBg : AppColors.of(context).bgSecondary,
                 borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(16),
-                  topRight: const Radius.circular(16),
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
                   bottomLeft: Radius.circular(isUser ? 16 : 4),
                   bottomRight: Radius.circular(isUser ? 4 : 16),
                 ),
@@ -410,7 +489,7 @@ class _MessageBubble extends StatelessWidget {
               child: Text(
                 message.content,
                 style: TextStyle(
-                  color: isUser ? Colors.white : AppColors.textPrimary,
+                  color: isUser ? Colors.white : AppColors.of(context).textPrimary,
                   fontSize: 15,
                   height: 1.5,
                 ),
@@ -418,11 +497,11 @@ class _MessageBubble extends StatelessWidget {
             ),
           ),
           if (isUser) ...[
-            const SizedBox(width: 8),
+            SizedBox(width: 8),
             CircleAvatar(
               radius: 16,
-              backgroundColor: AppColors.bgCard,
-              child: const Icon(Icons.person, size: 16, color: AppColors.textSecondary),
+              backgroundColor: AppColors.of(context).bgCard,
+              child: Icon(Icons.person, size: 16, color: AppColors.of(context).textSecondary),
             ),
           ],
         ],

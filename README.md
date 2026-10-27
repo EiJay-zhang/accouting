@@ -24,9 +24,11 @@ account/
 │   └── widgets/             # 公共组件与图表
 ├── server/                  # 后端服务
 │   ├── main.py              # FastAPI 入口与路由
-│   ├── database.py          # SQLite 初始化与种子数据
+│   ├── database.py          # SQLite 连接，启动时执行建表脚本
+│   ├── init_db.py           # 手动初始化数据库
+│   ├── sql/                 # 建表、默认分类、示例数据
 │   ├── requirements.txt     # Python 依赖
-│   └── account.db           # 数据库（首次启动后自动生成）
+│   └── account.db           # 默认数据库文件（可用 DATABASE_PATH 改位置）
 ├── scripts/
 │   └── start_dev.sh         # 一键启动开发环境
 └── pubspec.yaml
@@ -233,7 +235,16 @@ flutter build ios --release --dart-define=API_BASE_URL=http://192.168.1.100:8000
 |------|------|------|
 | GET | `/` | 服务信息与文档入口 |
 | GET | `/api/health` | 健康检查 |
-| GET | `/api/categories` | 获取全部分类 |
+| GET | `/api/categories` | 获取分类，可用 `type=income` 或 `expense` 筛选 |
+| POST | `/api/categories` | 新增分类 |
+| PUT | `/api/categories/{id}` | 修改分类名称、图标、颜色 |
+| DELETE | `/api/categories/{id}` | 删除没有账单的分类 |
+| GET | `/api/tags` | 获取标签，可用 `category_id` 筛选 |
+| POST | `/api/tags` | 为分类新增标签 |
+| PUT | `/api/tags/{id}` | 修改标签名称 |
+| DELETE | `/api/tags/{id}` | 删除标签 |
+| POST | `/api/imports/preview` | 预览支付宝、微信或银行卡账单 |
+| POST | `/api/imports/commit` | 确认导入预览中选中的账单 |
 | GET | `/api/transactions` | 获取某月交易列表 |
 | GET | `/api/transactions/summary` | 获取某月收支汇总 |
 | GET | `/api/reports/categories` | 获取某月分类统计报告 |
@@ -274,9 +285,25 @@ flutter build ios --release --dart-define=API_BASE_URL=http://192.168.1.100:8000
 
 ---
 
-### GET `/api/categories`
+### 分类 `/api/categories`
 
-获取所有交易分类。
+分类区分 `income`（收入）和 `expense`（支出）。同一名称可以各有一条。类型在创建时确定，之后不能修改。分类下还有账单时不能删除。
+
+**GET** 可选查询参数 `type=income` 或 `type=expense`。
+
+**POST** 请求体：`name`、`icon`、`color`（`#RRGGBB`）、`type`。
+
+**PUT** `/api/categories/{id}` 请求体：`name`、`icon`、`color`。
+
+### 标签 `/api/tags`
+
+标签属于某个分类。同一分类下名称不能重复。删除分类时，它的标签一并删除。标签只用于记一笔时快捷填入备注，不会单独记在账单上。
+
+**GET** 可选查询参数 `category_id`。
+
+**POST** 请求体：`category_id`、`name`。
+
+**PUT** `/api/tags/{id}` 请求体：`name`。
 
 **响应示例：**
 
@@ -286,13 +313,15 @@ flutter build ios --release --dart-define=API_BASE_URL=http://192.168.1.100:8000
     "id": 1,
     "name": "餐饮",
     "icon": "🍜",
-    "color": "#FF9800"
+    "color": "#FF9800",
+    "type": "expense"
   },
   {
-    "id": 2,
-    "name": "交通",
-    "icon": "🚇",
-    "color": "#2196F3"
+    "id": 4,
+    "name": "工资",
+    "icon": "💰",
+    "color": "#4CAF50",
+    "type": "income"
   }
 ]
 ```
@@ -327,7 +356,8 @@ curl "http://127.0.0.1:8000/api/transactions?year=2026&month=8"
       "id": 1,
       "name": "餐饮",
       "icon": "🍜",
-      "color": "#FF9800"
+      "color": "#FF9800",
+      "type": "expense"
     },
     "amount": 68.5,
     "type": "expense",
@@ -402,7 +432,8 @@ curl "http://127.0.0.1:8000/api/reports/categories?year=2026&month=8"
         "id": 1,
         "name": "餐饮",
         "icon": "🍜",
-        "color": "#FF9800"
+        "color": "#FF9800",
+        "type": "expense"
       },
       "income": 0.0,
       "expense": 83.5,
@@ -528,7 +559,8 @@ expense  — 支出
   "id": 1,
   "name": "餐饮",
   "icon": "🍜",
-  "color": "#FF9800"
+  "color": "#FF9800",
+  "type": "expense"
 }
 ```
 
@@ -552,11 +584,11 @@ expense  — 支出
 | 页面 | 功能 | 使用的接口 |
 |------|------|-----------|
 | 记账 | 当月收支概览、按日分组交易列表 | `summary` + `transactions` |
-| 记一笔 | 新增收入/支出 | `categories` + `POST transactions` |
+| 记一笔 | 新增收入/支出，选分类后可点标签填入备注 | `categories` + `tags` + `POST transactions` |
 | 账单 | 按月浏览账单明细 | `summary` + `transactions` |
 | 报告 | 收支环形图、分类饼图、柱状图 | `reports/categories` |
 | AI | DeepSeek 对话，分析收支与理财建议 | `chat` |
-| 设置 | 配置 API 地址 | 本地持久化，无需接口 |
+| 设置 | 配置 API 地址、外观、分类、标签，导入支付宝/微信/银行卡账单 | 本地持久化；导入走 `imports` |
 
 ---
 
@@ -601,6 +633,35 @@ curl http://127.0.0.1:8000/api/chat/status
 
 ---
 
+## 数据库
+
+脚本在 `server/sql/`：
+
+| 文件 | 作用 | 何时执行 |
+|------|------|----------|
+| `schema.sql` | 建表和索引 | 每次 `init_db`，以及后端启动时 |
+| `seed_categories.sql` | 8 个默认分类（工资为收入，其余为支出） | 同上，按名称和类型去重 |
+| `seed_tags.sql` | 默认分类的常用标签 | 仅当标签表为空 |
+| `migrate_category_type.sql` | 给旧库的分类补上收支类型 | 仅当 `categories` 还没有 `type` 列 |
+| `seed_demo.sql` | 2026 年 8 月示例账单 | 仅 `python3 init_db.py --demo`，且交易表为空 |
+
+服务器上只建空库和默认分类，不要加 `--demo`。
+
+```bash
+cd server
+cp .env.example .env
+# 在 .env 中设置 DATABASE_PATH=/var/lib/account/account.db
+
+python3 init_db.py
+python3 -m uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+未设置 `DATABASE_PATH` 时，数据库文件是 `server/account.db`。后端启动仍会执行建表和默认分类，已有交易不会被覆盖或清空。
+
+本地一键启动 `scripts/start_dev.sh` 会执行 `init_db.py --demo`。交易表里已经有数据时，示例账单不会再次写入。
+
+重置：停掉后端，删除数据库文件，再执行 `python3 init_db.py`。需要示例数据时加上 `--demo`。
+
 ## 常见问题
 
 **浏览器报 `ERR_CONNECTION_REFUSED`**
@@ -635,7 +696,7 @@ flutter run -d web-server --web-hostname 127.0.0.1 --web-port 8080
 
 **数据库重置**
 
-删除 `server/account.db` 后重启后端，会自动重建表并写入默认分类与示例数据。
+停掉后端，删除数据库文件（默认 `server/account.db`，或 `.env` 里的 `DATABASE_PATH`），再执行 `cd server && python3 init_db.py`。本地需要示例账单时加上 `--demo`。
 
 **AI 提示 API Key 未配置**
 

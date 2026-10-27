@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'config/api_config.dart';
+import 'config/chat_model_config.dart';
+import 'config/theme_config.dart';
 import 'constants/app_colors.dart';
 import 'pages/home_page.dart';
 import 'pages/add_transaction_page.dart';
@@ -12,7 +14,9 @@ import 'pages/ai_chat_page.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ApiConfig.load();
-  runApp(const MyApp());
+  await ThemeConfig.load();
+  await ChatModelConfig.load();
+  runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -20,18 +24,18 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: '记账',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: AppColors.addBtnBg,
-          brightness: Brightness.dark,
-        ),
-        scaffoldBackgroundColor: AppColors.bgPrimary,
-        useMaterial3: true,
-      ),
-      home: const MainShell(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: ThemeConfig.mode,
+      builder: (context, themeMode, _) {
+        return MaterialApp(
+          title: '记账',
+          debugShowCheckedModeBanner: false,
+          theme: buildAppTheme(AppColors.light, Brightness.light),
+          darkTheme: buildAppTheme(AppColors.dark, Brightness.dark),
+          themeMode: themeMode,
+          home: const MainShell(),
+        );
+      },
     );
   }
 }
@@ -52,9 +56,12 @@ class _MainShellState extends State<MainShell> {
   late final List<Widget> _pages = [
     HomePage(key: _homePageKey),
     BillsPage(key: _billsPageKey),
-    const AiChatPage(),
+    AiChatPage(),
     ReportPage(key: _reportPageKey),
-    SettingsPage(onApiConfigChanged: _refreshAllPages),
+    SettingsPage(
+      onApiConfigChanged: _refreshAllPages,
+      onDataChanged: _refreshAllPages,
+    ),
   ];
 
   void _refreshAllPages() {
@@ -66,7 +73,7 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bgPrimary,
+      backgroundColor: AppColors.of(context).bgPrimary,
       body: IndexedStack(
         index: _currentIndex,
         children: _pages,
@@ -82,8 +89,8 @@ class _MainShellState extends State<MainShell> {
   Widget _buildBottomNav() {
     return NavigationBarTheme(
       data: NavigationBarThemeData(
-        backgroundColor: AppColors.navBar,
-        indicatorColor: AppColors.addBtnBg.withValues(alpha: 0.22),
+        backgroundColor: AppColors.of(context).navBar,
+        indicatorColor: AppColors.of(context).addBtnBg.withValues(alpha: 0.22),
         surfaceTintColor: Colors.transparent,
         height: 64,
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
@@ -91,14 +98,14 @@ class _MainShellState extends State<MainShell> {
           return TextStyle(
             fontSize: 11,
             fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-            color: selected ? AppColors.navActive : AppColors.navItem,
+            color: selected ? AppColors.of(context).navActive : AppColors.of(context).navItem,
           );
         }),
         iconTheme: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
           return IconThemeData(
             size: 22,
-            color: selected ? AppColors.navActive : AppColors.navItem,
+            color: selected ? AppColors.of(context).navActive : AppColors.of(context).navItem,
           );
         }),
       ),
@@ -106,7 +113,7 @@ class _MainShellState extends State<MainShell> {
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) => setState(() => _currentIndex = index),
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        destinations: const [
+        destinations: [
           NavigationDestination(
             icon: Icon(Icons.book_outlined),
             selectedIcon: Icon(Icons.book),
@@ -142,20 +149,20 @@ class _MainShellState extends State<MainShell> {
       onPressed: () async {
         final saved = await Navigator.of(context).push<bool>(
           MaterialPageRoute(
-            builder: (_) => const AddTransactionPage(),
+            builder: (_) => AddTransactionPage(),
           ),
         );
         if (saved == true && mounted) {
           _refreshAllPages();
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('已保存')),
+            SnackBar(content: Text('已保存')),
           );
         }
       },
-      backgroundColor: AppColors.addBtnBg,
-      child: const Icon(
+      backgroundColor: AppColors.of(context).addBtnBg,
+      child: Icon(
         Icons.add_rounded,
-        color: AppColors.addBtnIcon,
+        color: AppColors.of(context).addBtnIcon,
         size: 32,
       ),
     );

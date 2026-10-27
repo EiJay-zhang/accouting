@@ -4,6 +4,8 @@ import '../api/api_client.dart';
 import '../constants/app_colors.dart';
 import '../models/transaction.dart';
 import '../services/transaction_service.dart';
+import 'category_manage_page.dart';
+import 'tag_manage_page.dart';
 
 class AddTransactionPage extends StatefulWidget {
   final Transaction? transaction;
@@ -23,6 +25,7 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
 
   TransactionType _selectedType = TransactionType.expense;
   List<TransactionCategory> _categories = [];
+  List<CategoryTag> _tags = [];
   TransactionCategory? _selectedCategory;
   late DateTime _selectedDate;
   bool _loadingCategories = true;
@@ -43,28 +46,41 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
     } else {
       _selectedDate = DateTime.now();
     }
+    _titleController.addListener(_onTitleChanged);
     _loadCategories();
+  }
+
+  void _onTitleChanged() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadCategories() async {
     try {
-      final categories = await _service.getCategories();
+      final results = await Future.wait([
+        _service.getCategories(),
+        _service.getTags(),
+      ]);
+      final categories = results[0] as List<TransactionCategory>;
+      final tags = results[1] as List<CategoryTag>;
       if (!mounted) return;
 
+      final visible =
+          categories.where((category) => category.type == _selectedType);
       TransactionCategory? selected;
-      final existing = widget.transaction;
-      if (existing != null) {
-        for (final cat in categories) {
-          if (cat.id == existing.category.id) {
-            selected = cat;
+      final preferredId = _selectedCategory?.id ?? widget.transaction?.category.id;
+      if (preferredId != null) {
+        for (final category in visible) {
+          if (category.id == preferredId) {
+            selected = category;
             break;
           }
         }
       }
-      selected ??= categories.isNotEmpty ? categories.first : null;
+      selected ??= visible.isNotEmpty ? visible.first : null;
 
       setState(() {
         _categories = categories;
+        _tags = tags;
         _selectedCategory = selected;
         _loadingCategories = false;
         _loadError = null;
@@ -82,63 +98,88 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
 
   @override
   void dispose() {
+    _titleController.removeListener(_onTitleChanged);
     _amountController.dispose();
     _titleController.dispose();
     super.dispose();
   }
 
+  List<CategoryTag> get _visibleTags {
+    final categoryId = _selectedCategory?.id;
+    if (categoryId == null) return const [];
+    return _tags.where((tag) => tag.categoryId == categoryId).toList();
+  }
+
+  void _applyTag(CategoryTag tag) {
+    final next = _titleController.text == tag.name ? '' : tag.name;
+    _titleController.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: next.length),
+    );
+  }
+
+  Future<void> _reloadTags() async {
+    try {
+      final tags = await _service.getTags();
+      if (!mounted) return;
+      setState(() => _tags = tags);
+    } catch (_) {}
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bgPrimary,
+      backgroundColor: AppColors.of(context).bgPrimary,
       appBar: AppBar(
-        backgroundColor: AppColors.bgPrimary,
+        backgroundColor: AppColors.of(context).bgPrimary,
         elevation: 0,
         title: Text(
           widget.isEditing ? '编辑账单' : '记一笔',
-          style: const TextStyle(
-            color: AppColors.textPrimary,
+          style: TextStyle(
+            color: AppColors.of(context).textPrimary,
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
         ),
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.close, color: AppColors.textPrimary),
+          icon: Icon(Icons.close, color: AppColors.of(context).textPrimary),
           onPressed: _submitting ? null : () => Navigator.pop(context),
         ),
         actions: [
           if (widget.isEditing)
             IconButton(
-              icon: const Icon(Icons.delete_outline, color: AppColors.expenseRed),
+              icon: Icon(Icons.delete_outline, color: AppColors.of(context).expenseRed),
               onPressed: _submitting ? null : _confirmDelete,
             ),
         ],
       ),
       body: SafeArea(
         child: _loadingCategories
-            ? const Center(
-                child: CircularProgressIndicator(color: AppColors.addBtnBg),
+            ? Center(
+                child: CircularProgressIndicator(color: AppColors.of(context).addBtnBg),
               )
             : _loadError != null
                 ? _buildLoadError()
                 : SingleChildScrollView(
-                    padding: const EdgeInsets.all(20),
+                    padding: EdgeInsets.all(20),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         _buildTypeSwitch(),
-                        const SizedBox(height: 24),
+                        SizedBox(height: 24),
                         _buildAmountInput(),
-                        const SizedBox(height: 16),
+                        SizedBox(height: 16),
                         _buildTitleInput(),
-                        const SizedBox(height: 16),
+                        SizedBox(height: 12),
+                        _buildTagShortcuts(),
+                        SizedBox(height: 16),
                         _buildDateSelector(),
-                        const SizedBox(height: 20),
+                        SizedBox(height: 20),
                         _buildCategorySelector(),
-                        const SizedBox(height: 24),
+                        SizedBox(height: 24),
                         _buildSubmitButton(),
-                        const SizedBox(height: 20),
+                        SizedBox(height: 20),
                       ],
                     ),
                   ),
@@ -149,16 +190,16 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
   Widget _buildLoadError() {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
               _loadError!,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.textSecondary),
+              style: TextStyle(color: AppColors.of(context).textSecondary),
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
             ElevatedButton(
               onPressed: () {
                 setState(() {
@@ -168,10 +209,10 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
                 _loadCategories();
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.addBtnBg,
+                backgroundColor: AppColors.of(context).addBtnBg,
                 foregroundColor: Colors.white,
               ),
-              child: const Text('重试'),
+              child: Text('重试'),
             ),
           ],
         ),
@@ -182,7 +223,7 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
   Widget _buildTypeSwitch() {
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.bgSecondary,
+        color: AppColors.of(context).bgSecondary,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -191,12 +232,12 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
             child: GestureDetector(
               onTap: _submitting
                   ? null
-                  : () => setState(() => _selectedType = TransactionType.expense),
+                  : () => _selectType(TransactionType.expense),
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                padding: EdgeInsets.symmetric(vertical: 14),
                 decoration: BoxDecoration(
                   color: _selectedType == TransactionType.expense
-                      ? AppColors.expenseRed.withValues(alpha: 0.2)
+                      ? AppColors.of(context).expenseRed.withValues(alpha: 0.2)
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -205,8 +246,8 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
                     '支出',
                     style: TextStyle(
                       color: _selectedType == TransactionType.expense
-                          ? AppColors.expenseRed
-                          : AppColors.textTertiary,
+                          ? AppColors.of(context).expenseRed
+                          : AppColors.of(context).textTertiary,
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                     ),
@@ -219,12 +260,12 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
             child: GestureDetector(
               onTap: _submitting
                   ? null
-                  : () => setState(() => _selectedType = TransactionType.income),
+                  : () => _selectType(TransactionType.income),
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 14),
+                padding: EdgeInsets.symmetric(vertical: 14),
                 decoration: BoxDecoration(
                   color: _selectedType == TransactionType.income
-                      ? AppColors.incomeGreen.withValues(alpha: 0.2)
+                      ? AppColors.of(context).incomeGreen.withValues(alpha: 0.2)
                       : Colors.transparent,
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -233,8 +274,8 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
                     '收入',
                     style: TextStyle(
                       color: _selectedType == TransactionType.income
-                          ? AppColors.incomeGreen
-                          : AppColors.textTertiary,
+                          ? AppColors.of(context).incomeGreen
+                          : AppColors.of(context).textTertiary,
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                     ),
@@ -250,9 +291,9 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
 
   Widget _buildAmountInput() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: AppColors.bgSecondary,
+        color: AppColors.of(context).bgSecondary,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -261,29 +302,29 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
             _selectedType == TransactionType.expense ? '-' : '+',
             style: TextStyle(
               color: _selectedType == TransactionType.expense
-                  ? AppColors.expenseRed
-                  : AppColors.incomeGreen,
+                  ? AppColors.of(context).expenseRed
+                  : AppColors.of(context).incomeGreen,
               fontSize: 24,
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(width: 8),
+          SizedBox(width: 8),
           Expanded(
             child: TextField(
               controller: _amountController,
               enabled: !_submitting,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
+              style: TextStyle(
+                color: AppColors.of(context).textPrimary,
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
               ),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: '0.00',
-                hintStyle: TextStyle(color: AppColors.textTertiary),
+                hintStyle: TextStyle(color: AppColors.of(context).textTertiary),
                 border: InputBorder.none,
               ),
               keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+                  TextInputType.numberWithOptions(decimal: true),
             ),
           ),
         ],
@@ -291,20 +332,47 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
     );
   }
 
+  Widget _buildTagShortcuts() {
+    if (_selectedCategory == null) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_visibleTags.isEmpty)
+          Text(
+            '这个分类还没有标签，可在下方管理标签里添加',
+            style: TextStyle(color: AppColors.of(context).textTertiary, fontSize: 13),
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final tag in _visibleTags)
+                _TagChip(
+                  label: tag.name,
+                  selected: _titleController.text == tag.name,
+                  onTap: _submitting ? null : () => _applyTag(tag),
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+
   Widget _buildTitleInput() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: AppColors.bgSecondary,
+        color: AppColors.of(context).bgSecondary,
         borderRadius: BorderRadius.circular(12),
       ),
       child: TextField(
         controller: _titleController,
         enabled: !_submitting,
-        style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
-        decoration: const InputDecoration(
+        style: TextStyle(color: AppColors.of(context).textPrimary, fontSize: 15),
+        decoration: InputDecoration(
           hintText: '添加备注...',
-          hintStyle: TextStyle(color: AppColors.textTertiary),
+          hintStyle: TextStyle(color: AppColors.of(context).textTertiary),
           border: InputBorder.none,
           contentPadding: EdgeInsets.symmetric(vertical: 14),
         ),
@@ -320,21 +388,21 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
       onTap: _submitting ? null : _pickDate,
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: AppColors.bgSecondary,
+          color: AppColors.of(context).bgSecondary,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           children: [
-            const Icon(Icons.calendar_today, color: AppColors.textTertiary, size: 18),
-            const SizedBox(width: 12),
+            Icon(Icons.calendar_today, color: AppColors.of(context).textTertiary, size: 18),
+            SizedBox(width: 12),
             Text(
               label,
-              style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
+              style: TextStyle(color: AppColors.of(context).textPrimary, fontSize: 15),
             ),
-            const Spacer(),
-            const Icon(Icons.chevron_right, color: AppColors.textTertiary, size: 20),
+            Spacer(),
+            Icon(Icons.chevron_right, color: AppColors.of(context).textTertiary, size: 20),
           ],
         ),
       ),
@@ -347,50 +415,92 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
       initialDate: _selectedDate,
       firstDate: DateTime(2000),
       lastDate: DateTime(2100),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.dark(
-              primary: AppColors.addBtnBg,
-              surface: AppColors.bgSecondary,
-            ),
-          ),
-          child: child!,
-        );
-      },
     );
     if (picked != null) {
       setState(() => _selectedDate = picked);
     }
   }
 
+  void _selectType(TransactionType type) {
+    if (type == _selectedType) return;
+    final visible = _categories.where((category) => category.type == type).toList();
+    setState(() {
+      _selectedType = type;
+      _selectedCategory = visible.isNotEmpty ? visible.first : null;
+    });
+  }
+
+  List<TransactionCategory> get _visibleCategories =>
+      _categories.where((category) => category.type == _selectedType).toList();
+
+  Future<void> _openTagManager() async {
+    final category = _selectedCategory;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => category == null
+            ? TagManagePage(initialType: _selectedType)
+            : CategoryTagsPage(category: category),
+      ),
+    );
+    if (!mounted) return;
+    await _reloadTags();
+  }
+
+  Future<void> _openCategoryManager() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CategoryManagePage(initialType: _selectedType),
+      ),
+    );
+    if (!mounted) return;
+    await _loadCategories();
+  }
+
   Widget _buildCategorySelector() {
+    final visible = _visibleCategories;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
+        Padding(
           padding: EdgeInsets.only(bottom: 12),
           child: Text(
             '选择分类',
             style: TextStyle(
-              color: AppColors.textSecondary,
+              color: AppColors.of(context).textSecondary,
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
           ),
         ),
-        GridView.builder(
+        if (visible.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+            decoration: BoxDecoration(
+              color: AppColors.of(context).bgSecondary,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              _selectedType == TransactionType.expense
+                  ? '还没有支出分类'
+                  : '还没有收入分类',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.of(context).textTertiary),
+            ),
+          )
+        else
+          GridView.builder(
           shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: _categories.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          physics: NeverScrollableScrollPhysics(),
+          itemCount: visible.length,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 4,
             mainAxisSpacing: 12,
             crossAxisSpacing: 12,
             childAspectRatio: 0.85,
           ),
           itemBuilder: (context, index) {
-            final cat = _categories[index];
+            final cat = visible[index];
             final isSelected = _selectedCategory?.id == cat.id;
             return GestureDetector(
               onTap: _submitting
@@ -400,26 +510,26 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
                 decoration: BoxDecoration(
                   color: isSelected
                       ? cat.color.withValues(alpha: 0.25)
-                      : AppColors.bgSecondary,
+                      : AppColors.of(context).bgSecondary,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: isSelected
                         ? cat.color
-                        : AppColors.divider.withValues(alpha: 0.3),
+                        : AppColors.of(context).divider.withValues(alpha: 0.3),
                     width: isSelected ? 2 : 0.5,
                   ),
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(cat.icon, style: const TextStyle(fontSize: 28)),
-                    const SizedBox(height: 4),
+                    Text(cat.icon, style: TextStyle(fontSize: 28)),
+                    SizedBox(height: 4),
                     Text(
                       cat.name,
                       style: TextStyle(
                         color: isSelected
-                            ? AppColors.textPrimary
-                            : AppColors.textTertiary,
+                            ? AppColors.of(context).textPrimary
+                            : AppColors.of(context).textTertiary,
                         fontSize: 12,
                       ),
                     ),
@@ -428,6 +538,22 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
               ),
             );
           },
+        ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton(
+                onPressed: _submitting ? null : _openTagManager,
+                child: const Text('管理标签'),
+              ),
+              TextButton(
+                onPressed: _submitting ? null : _openCategoryManager,
+                child: const Text('管理分类'),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -439,7 +565,7 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
       child: ElevatedButton(
         onPressed: _submitting ? null : _submit,
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.addBtnBg,
+          backgroundColor: AppColors.of(context).addBtnBg,
           foregroundColor: Colors.white,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
@@ -447,7 +573,7 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
           elevation: 0,
         ),
         child: _submitting
-            ? const SizedBox(
+            ? SizedBox(
                 width: 22,
                 height: 22,
                 child: CircularProgressIndicator(
@@ -457,7 +583,7 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
               )
             : Text(
                 widget.isEditing ? '保存修改' : '保存',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
       ),
     );
@@ -467,7 +593,7 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
     final amount = double.tryParse(_amountController.text);
     if (amount == null || amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入有效金额')),
+        SnackBar(content: Text('请输入有效金额')),
       );
       return;
     }
@@ -475,7 +601,7 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
     final category = _selectedCategory;
     if (category == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请选择分类')),
+        SnackBar(content: Text('请选择分类')),
       );
       return;
     }
@@ -524,20 +650,20 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: AppColors.bgSecondary,
-        title: const Text('删除账单', style: TextStyle(color: AppColors.textPrimary)),
-        content: const Text(
+        backgroundColor: AppColors.of(context).bgSecondary,
+        title: Text('删除账单', style: TextStyle(color: AppColors.of(context).textPrimary)),
+        content: Text(
           '确定要删除这条账单吗？此操作不可撤销。',
-          style: TextStyle(color: AppColors.textSecondary),
+          style: TextStyle(color: AppColors.of(context).textSecondary),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+            child: Text('取消'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('删除', style: TextStyle(color: AppColors.expenseRed)),
+            child: Text('删除', style: TextStyle(color: AppColors.of(context).expenseRed)),
           ),
         ],
       ),
@@ -563,5 +689,46 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
         setState(() => _submitting = false);
       }
     }
+  }
+}
+
+class _TagChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  const _TagChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    return Material(
+      color: selected ? colors.addBtnBg : colors.bgSecondary,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(
+          color: selected ? colors.addBtnBg : colors.divider,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: selected ? Colors.white : colors.textPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

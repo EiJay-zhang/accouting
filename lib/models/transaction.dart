@@ -6,27 +6,57 @@ class TransactionCategory {
   final int id;
   final String name;
   final String icon;
-  final Color color;
+  final String colorHex;
+  final TransactionType type;
 
   const TransactionCategory({
     required this.id,
     required this.name,
     required this.icon,
-    required this.color,
+    required this.colorHex,
+    required this.type,
   });
+
+  Color get color => colorFromHex(colorHex);
 
   factory TransactionCategory.fromJson(Map<String, dynamic> json) {
     return TransactionCategory(
       id: json['id'] as int,
       name: json['name'] as String,
       icon: json['icon'] as String,
-      color: _colorFromHex(json['color'] as String),
+      colorHex: json['color'] as String,
+      type: json['type'] == 'income'
+          ? TransactionType.income
+          : TransactionType.expense,
     );
   }
 
-  static Color _colorFromHex(String hex) {
+  static Color colorFromHex(String hex) {
     final value = hex.replaceFirst('#', '');
     return Color(int.parse('FF$value', radix: 16));
+  }
+}
+
+class CategoryTag {
+  final int id;
+  final int categoryId;
+  final String name;
+  final int sortOrder;
+
+  const CategoryTag({
+    required this.id,
+    required this.categoryId,
+    required this.name,
+    required this.sortOrder,
+  });
+
+  factory CategoryTag.fromJson(Map<String, dynamic> json) {
+    return CategoryTag(
+      id: json['id'] as int,
+      categoryId: json['category_id'] as int,
+      name: json['name'] as String,
+      sortOrder: json['sort_order'] as int,
+    );
   }
 }
 

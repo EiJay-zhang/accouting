@@ -3,8 +3,11 @@ set -e
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-echo "==> 启动后端 http://127.0.0.1:8000"
+echo "==> 初始化本地数据库"
 cd "$ROOT/server"
+python3 init_db.py --demo
+
+echo "==> 启动后端 http://127.0.0.1:8000"
 python3 -m uvicorn main:app --host 127.0.0.1 --port 8000 &
 BACKEND_PID=$!
 

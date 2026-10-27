@@ -31,29 +31,29 @@ class TransactionGroupCard extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
+            padding: EdgeInsets.symmetric(vertical: 8),
             child: Row(
               children: [
                 Text(
                   '$dateStr  $weekday',
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
+                  style: TextStyle(
+                    color: AppColors.of(context).textSecondary,
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                const Spacer(),
+                Spacer(),
                 Text(
                   '${dayTotal >= 0 ? '+' : ''}${dayTotal.toStringAsFixed(2)}',
                   style: TextStyle(
                     color: dayTotal >= 0
-                        ? AppColors.incomeGreen
-                        : AppColors.expenseRed,
+                        ? AppColors.of(context).incomeGreen
+                        : AppColors.of(context).expenseRed,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -63,7 +63,7 @@ class TransactionGroupCard extends StatelessWidget {
           ),
           Container(
             decoration: BoxDecoration(
-              color: AppColors.bgSecondary,
+              color: AppColors.of(context).bgSecondary,
               borderRadius: BorderRadius.circular(16),
             ),
             child: Column(
@@ -100,20 +100,20 @@ class TransactionTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isExpense = transaction.type == TransactionType.expense;
     final sign = isExpense ? '-' : '+';
-    final color = isExpense ? AppColors.expenseRed : AppColors.incomeGreen;
+    final color = isExpense ? AppColors.of(context).expenseRed : AppColors.of(context).incomeGreen;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
             border: isLast
                 ? null
                 : Border(
                     bottom: BorderSide(
-                      color: AppColors.divider.withValues(alpha: 0.3),
+                      color: AppColors.of(context).divider.withValues(alpha: 0.3),
                       width: 0.5,
                     ),
                   ),
@@ -130,28 +130,28 @@ class TransactionTile extends StatelessWidget {
                 child: Center(
                   child: Text(
                     transaction.category.icon,
-                    style: const TextStyle(fontSize: 22),
+                    style: TextStyle(fontSize: 22),
                   ),
                 ),
               ),
-              const SizedBox(width: 14),
+              SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       transaction.title,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
+                      style: TextStyle(
+                        color: AppColors.of(context).textPrimary,
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    SizedBox(height: 2),
                     Text(
                       transaction.category.name,
-                      style: const TextStyle(
-                        color: AppColors.textTertiary,
+                      style: TextStyle(
+                        color: AppColors.of(context).textTertiary,
                         fontSize: 12,
                       ),
                     ),
@@ -167,11 +167,11 @@ class TransactionTile extends StatelessWidget {
                 ),
               ),
               if (onTap != null) ...[
-                const SizedBox(width: 4),
+                SizedBox(width: 4),
                 Icon(
                   Icons.chevron_right,
                   size: 18,
-                  color: AppColors.textTertiary.withValues(alpha: 0.7),
+                  color: AppColors.of(context).textTertiary.withValues(alpha: 0.7),
                 ),
               ],
             ],
@@ -197,19 +197,19 @@ class MonthSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+      padding: EdgeInsets.fromLTRB(20, 20, 20, 12),
       child: Row(
         children: [
           IconButton(
             onPressed: onPrevious,
-            icon: const Icon(Icons.chevron_left, color: AppColors.textPrimary),
+            icon: Icon(Icons.chevron_left, color: AppColors.of(context).textPrimary),
           ),
           Expanded(
             child: Text(
               '${month.year}年${month.month}月',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
+              style: TextStyle(
+                color: AppColors.of(context).textPrimary,
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
               ),
@@ -217,7 +217,7 @@ class MonthSelector extends StatelessWidget {
           ),
           IconButton(
             onPressed: onNext,
-            icon: const Icon(Icons.chevron_right, color: AppColors.textPrimary),
+            icon: Icon(Icons.chevron_right, color: AppColors.of(context).textPrimary),
           ),
         ],
       ),
@@ -243,25 +243,25 @@ class ApiErrorView extends StatelessWidget {
 
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.cloud_off, color: AppColors.textTertiary, size: 48),
-            const SizedBox(height: 16),
+            Icon(Icons.cloud_off, color: AppColors.of(context).textTertiary, size: 48),
+            SizedBox(height: 16),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.textSecondary, fontSize: 15),
+              style: TextStyle(color: AppColors.of(context).textSecondary, fontSize: 15),
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: 20),
             ElevatedButton(
               onPressed: onRetry,
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.addBtnBg,
+                backgroundColor: AppColors.of(context).addBtnBg,
                 foregroundColor: Colors.white,
               ),
-              child: const Text('重试'),
+              child: Text('重试'),
             ),
           ],
         ),

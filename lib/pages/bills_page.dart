@@ -57,17 +57,17 @@ class BillsPageState extends State<BillsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bgPrimary,
+      backgroundColor: AppColors.of(context).bgPrimary,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(20, 20, 20, 0),
               child: Text(
                 '账单',
                 style: TextStyle(
-                  color: AppColors.textPrimary,
+                  color: AppColors.of(context).textPrimary,
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
                 ),
@@ -83,8 +83,8 @@ class BillsPageState extends State<BillsPage> {
                 future: _billsFuture,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: CircularProgressIndicator(color: AppColors.addBtnBg),
+                    return Center(
+                      child: CircularProgressIndicator(color: AppColors.of(context).addBtnBg),
                     );
                   }
 
@@ -94,22 +94,22 @@ class BillsPageState extends State<BillsPage> {
 
                   final data = snapshot.data!;
                   return RefreshIndicator(
-                    color: AppColors.addBtnBg,
-                    backgroundColor: AppColors.bgSecondary,
+                    color: AppColors.of(context).addBtnBg,
+                    backgroundColor: AppColors.of(context).bgSecondary,
                     onRefresh: () async {
                       _loadBills();
                       await _billsFuture;
                     },
                     child: data.groups.isEmpty
                         ? ListView(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            children: const [
+                            physics: AlwaysScrollableScrollPhysics(),
+                            children: [
                               SizedBox(height: 120),
                               Center(
                                 child: Text(
                                   '该月暂无账单',
                                   style: TextStyle(
-                                    color: AppColors.textTertiary,
+                                    color: AppColors.of(context).textTertiary,
                                     fontSize: 15,
                                   ),
                                 ),
@@ -117,7 +117,7 @@ class BillsPageState extends State<BillsPage> {
                             ],
                           )
                         : ListView(
-                            physics: const AlwaysScrollableScrollPhysics(),
+                            physics: AlwaysScrollableScrollPhysics(),
                             children: [
                               _buildSummaryBar(data),
                               ...data.groups.map(
@@ -126,7 +126,7 @@ class BillsPageState extends State<BillsPage> {
                                   onTransactionTap: _openEditTransaction,
                                 ),
                               ),
-                              const SizedBox(height: 100),
+                              SizedBox(height: 100),
                             ],
                           ),
                   );
@@ -141,20 +141,20 @@ class BillsPageState extends State<BillsPage> {
 
   Widget _buildSummaryBar(HomeData data) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: AppColors.bgSecondary,
+          color: AppColors.of(context).bgSecondary,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
           children: [
-            _buildSummaryItem('收入', data.summary.income, AppColors.incomeGreen, '+'),
-            Container(width: 1, height: 36, color: AppColors.divider),
-            _buildSummaryItem('支出', data.summary.expense, AppColors.expenseRed, '-'),
-            Container(width: 1, height: 36, color: AppColors.divider),
-            _buildSummaryItem('结余', data.summary.total, AppColors.textPrimary, ''),
+            _buildSummaryItem('收入', data.summary.income, AppColors.of(context).incomeGreen, '+'),
+            Container(width: 1, height: 36, color: AppColors.of(context).divider),
+            _buildSummaryItem('支出', data.summary.expense, AppColors.of(context).expenseRed, '-'),
+            Container(width: 1, height: 36, color: AppColors.of(context).divider),
+            _buildSummaryItem('结余', data.summary.total, AppColors.of(context).textPrimary, ''),
           ],
         ),
       ),
@@ -172,9 +172,9 @@ class BillsPageState extends State<BillsPage> {
         children: [
           Text(
             label,
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            style: TextStyle(color: AppColors.of(context).textSecondary, fontSize: 12),
           ),
-          const SizedBox(height: 6),
+          SizedBox(height: 6),
           Text(
             '$prefix¥${amount.abs().toStringAsFixed(2)}',
             style: TextStyle(

@@ -6,11 +6,82 @@ class TransactionApi {
 
   final ApiClient _client;
 
-  Future<List<TransactionCategory>> fetchCategories() async {
-    final rows = await _client.getJsonList('/api/categories');
+  Future<List<TransactionCategory>> fetchCategories({
+    TransactionType? type,
+  }) async {
+    final rows = await _client.getJsonList(
+      '/api/categories',
+      query: type == null ? null : {'type': type.name},
+    );
     return rows
         .map((row) => TransactionCategory.fromJson(row as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<TransactionCategory> createCategory({
+    required String name,
+    required String icon,
+    required String colorHex,
+    required TransactionType type,
+  }) async {
+    final row = await _client.postJson('/api/categories', {
+      'name': name,
+      'icon': icon,
+      'color': colorHex,
+      'type': type.name,
+    });
+    return TransactionCategory.fromJson(row);
+  }
+
+  Future<TransactionCategory> updateCategory({
+    required int id,
+    required String name,
+    required String icon,
+    required String colorHex,
+  }) async {
+    final row = await _client.putJson('/api/categories/$id', {
+      'name': name,
+      'icon': icon,
+      'color': colorHex,
+    });
+    return TransactionCategory.fromJson(row);
+  }
+
+  Future<void> deleteCategory(int id) {
+    return _client.delete('/api/categories/$id');
+  }
+
+  Future<List<CategoryTag>> fetchTags({int? categoryId}) async {
+    final rows = await _client.getJsonList(
+      '/api/tags',
+      query: categoryId == null ? null : {'category_id': '$categoryId'},
+    );
+    return rows
+        .map((row) => CategoryTag.fromJson(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<CategoryTag> createTag({
+    required int categoryId,
+    required String name,
+  }) async {
+    final row = await _client.postJson('/api/tags', {
+      'category_id': categoryId,
+      'name': name,
+    });
+    return CategoryTag.fromJson(row);
+  }
+
+  Future<CategoryTag> updateTag({
+    required int id,
+    required String name,
+  }) async {
+    final row = await _client.putJson('/api/tags/$id', {'name': name});
+    return CategoryTag.fromJson(row);
+  }
+
+  Future<void> deleteTag(int id) {
+    return _client.delete('/api/tags/$id');
   }
 
   Future<List<Transaction>> fetchTransactions({

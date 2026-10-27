@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../api/report_api.dart';
 import '../constants/app_colors.dart';
+import 'report_palette.dart';
 
 class ReportCharts extends StatelessWidget {
   final CategoryReport report;
@@ -28,12 +29,12 @@ class ReportCharts extends StatelessWidget {
           ),
         ),
         if (expenseItems.isNotEmpty) ...[
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           _ChartCard(
             title: '支出分类占比',
             child: _CategoryExpensePieChart(items: expenseItems),
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           _ChartCard(
             title: '分类支出对比',
             child: _CategoryBarChart(items: expenseItems),
@@ -53,11 +54,11 @@ class _ChartCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: EdgeInsets.symmetric(horizontal: 20),
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: AppColors.bgSecondary,
+          color: AppColors.of(context).bgSecondary,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Column(
@@ -65,13 +66,13 @@ class _ChartCard extends StatelessWidget {
           children: [
             Text(
               title,
-              style: const TextStyle(
-                color: AppColors.textSecondary,
+              style: TextStyle(
+                color: AppColors.of(context).textSecondary,
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: 20),
             child,
           ],
         ),
@@ -95,7 +96,7 @@ class _IncomeExpenseDonutChart extends StatelessWidget {
   Widget build(BuildContext context) {
     final sum = income + expense;
     if (sum == 0) {
-      return const _ChartEmptyHint(message: '本月暂无收支数据');
+      return _ChartEmptyHint(message: '本月暂无收支数据');
     }
 
     return SizedBox(
@@ -112,12 +113,12 @@ class _IncomeExpenseDonutChart extends StatelessWidget {
                 sections: [
                   _pieSection(
                     value: income,
-                    color: AppColors.incomeGreen,
+                    color: ReportPalette.income,
                     title: income > 0 ? '${(income / sum * 100).toStringAsFixed(0)}%' : '',
                   ),
                   _pieSection(
                     value: expense,
-                    color: AppColors.expenseRed,
+                    color: ReportPalette.expense,
                     title: expense > 0 ? '${(expense / sum * 100).toStringAsFixed(0)}%' : '',
                   ),
                 ],
@@ -133,22 +134,20 @@ class _IncomeExpenseDonutChart extends StatelessWidget {
                 Text(
                   '¥${total.toStringAsFixed(2)}',
                   style: TextStyle(
-                    color: total >= 0
-                        ? AppColors.incomeGreen
-                        : AppColors.expenseRed,
+                    color: total >= 0 ? ReportPalette.incomeInk : ReportPalette.expenseInk,
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(height: 4),
-                const Text(
+                SizedBox(height: 4),
+                Text(
                   '月度结余',
-                  style: TextStyle(color: AppColors.textTertiary, fontSize: 12),
+                  style: TextStyle(color: AppColors.of(context).textTertiary, fontSize: 12),
                 ),
-                const SizedBox(height: 16),
-                _LegendItem(color: AppColors.incomeGreen, label: '收入', value: income),
-                const SizedBox(height: 8),
-                _LegendItem(color: AppColors.expenseRed, label: '支出', value: expense),
+                SizedBox(height: 16),
+                _LegendItem(color: ReportPalette.income, label: '收入', value: income),
+                SizedBox(height: 8),
+                _LegendItem(color: ReportPalette.expense, label: '支出', value: expense),
               ],
             ),
           ),
@@ -167,8 +166,8 @@ class _IncomeExpenseDonutChart extends StatelessWidget {
       color: color,
       title: title,
       radius: 58,
-      titleStyle: const TextStyle(
-        color: Colors.white,
+      titleStyle: TextStyle(
+        color: ReportPalette.label,
         fontSize: 12,
         fontWeight: FontWeight.w700,
       ),
@@ -221,11 +220,11 @@ class _CategoryExpensePieChartState extends State<_CategoryExpensePieChart> {
                 final percent = item.expense / totalExpense * 100;
                 return PieChartSectionData(
                   value: item.expense,
-                  color: item.category.color,
+                  color: ReportPalette.category(item.category.id),
                   radius: isTouched ? 64 : 56,
                   title: percent >= 8 ? '${percent.toStringAsFixed(0)}%' : '',
-                  titleStyle: const TextStyle(
-                    color: Colors.white,
+                  titleStyle: TextStyle(
+                    color: ReportPalette.label,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                   ),
@@ -234,18 +233,8 @@ class _CategoryExpensePieChartState extends State<_CategoryExpensePieChart> {
             ),
           ),
         ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          children: widget.items.map((item) {
-            return _LegendItem(
-              color: item.category.color,
-              label: '${item.category.icon} ${item.category.name}',
-              value: item.expense,
-            );
-          }).toList(),
-        ),
+        SizedBox(height: 20),
+        _CategoryLegend(items: widget.items),
       ],
     );
   }
@@ -270,26 +259,26 @@ class _CategoryBarChart extends StatelessWidget {
             drawVerticalLine: false,
             horizontalInterval: maxY > 0 ? maxY / 4 : 1,
             getDrawingHorizontalLine: (value) => FlLine(
-              color: AppColors.divider.withValues(alpha: 0.35),
+              color: AppColors.of(context).divider.withValues(alpha: 0.35),
               strokeWidth: 1,
             ),
           ),
           borderData: FlBorderData(show: false),
           titlesData: FlTitlesData(
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 42,
                 getTitlesWidget: (value, meta) {
                   if (value == 0 || value == meta.max) {
-                    return const SizedBox.shrink();
+                    return SizedBox.shrink();
                   }
                   return Text(
                     _compactAmount(value),
-                    style: const TextStyle(
-                      color: AppColors.textTertiary,
+                    style: TextStyle(
+                      color: AppColors.of(context).textTertiary,
                       fontSize: 10,
                     ),
                   );
@@ -299,17 +288,17 @@ class _CategoryBarChart extends StatelessWidget {
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: 28,
+                reservedSize: 36,
                 getTitlesWidget: (value, meta) {
                   final index = value.toInt();
                   if (index < 0 || index >= items.length) {
-                    return const SizedBox.shrink();
+                    return SizedBox.shrink();
                   }
                   return Padding(
-                    padding: const EdgeInsets.only(top: 6),
+                    padding: EdgeInsets.only(top: 10),
                     child: Text(
                       items[index].category.icon,
-                      style: const TextStyle(fontSize: 14),
+                      style: TextStyle(fontSize: 18),
                     ),
                   );
                 },
@@ -323,9 +312,9 @@ class _CategoryBarChart extends StatelessWidget {
               barRods: [
                 BarChartRodData(
                   toY: item.expense,
-                  color: item.category.color,
-                  width: 18,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                  color: ReportPalette.category(item.category.id),
+                  width: 22,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
                 ),
               ],
             );
@@ -343,6 +332,67 @@ class _CategoryBarChart extends StatelessWidget {
       return '${(value / 1000).toStringAsFixed(1)}k';
     }
     return value.toStringAsFixed(0);
+  }
+}
+
+class _CategoryLegend extends StatelessWidget {
+  final List<CategoryReportItem> items;
+
+  const _CategoryLegend({required this.items});
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 28,
+      runSpacing: 12,
+      children: [
+        for (final item in items) _CategoryLegendTile(item: item),
+      ],
+    );
+  }
+}
+
+class _CategoryLegendTile extends StatelessWidget {
+  final CategoryReportItem item;
+
+  const _CategoryLegendTile({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = ReportPalette.category(item.category.id);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(item.category.icon, style: TextStyle(fontSize: 20)),
+        ),
+        SizedBox(width: 10),
+        Text(
+          item.category.name,
+          style: TextStyle(
+            color: AppColors.of(context).textPrimary,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        SizedBox(width: 8),
+        Text(
+          '¥${item.expense.toStringAsFixed(2)}',
+          style: TextStyle(
+            color: AppColors.of(context).textSecondary,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -367,16 +417,16 @@ class _LegendItem extends StatelessWidget {
           height: 10,
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
-        const SizedBox(width: 6),
+        SizedBox(width: 6),
         Text(
           label,
-          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          style: TextStyle(color: AppColors.of(context).textSecondary, fontSize: 12),
         ),
-        const SizedBox(width: 6),
+        SizedBox(width: 6),
         Text(
           '¥${value.toStringAsFixed(2)}',
-          style: const TextStyle(
-            color: AppColors.textPrimary,
+          style: TextStyle(
+            color: AppColors.of(context).textPrimary,
             fontSize: 12,
             fontWeight: FontWeight.w600,
           ),
@@ -398,7 +448,7 @@ class _ChartEmptyHint extends StatelessWidget {
       child: Center(
         child: Text(
           message,
-          style: const TextStyle(color: AppColors.textTertiary, fontSize: 14),
+          style: TextStyle(color: AppColors.of(context).textTertiary, fontSize: 14),
         ),
       ),
     );

@@ -6,8 +6,62 @@ class TransactionService {
 
   final TransactionApi _api;
 
-  Future<List<TransactionCategory>> getCategories() {
-    return _api.fetchCategories();
+  Future<List<TransactionCategory>> getCategories({TransactionType? type}) {
+    return _api.fetchCategories(type: type);
+  }
+
+  Future<TransactionCategory> createCategory({
+    required String name,
+    required String icon,
+    required String colorHex,
+    required TransactionType type,
+  }) {
+    return _api.createCategory(
+      name: name,
+      icon: icon,
+      colorHex: colorHex,
+      type: type,
+    );
+  }
+
+  Future<TransactionCategory> updateCategory({
+    required int id,
+    required String name,
+    required String icon,
+    required String colorHex,
+  }) {
+    return _api.updateCategory(
+      id: id,
+      name: name,
+      icon: icon,
+      colorHex: colorHex,
+    );
+  }
+
+  Future<void> deleteCategory(int id) {
+    return _api.deleteCategory(id);
+  }
+
+  Future<List<CategoryTag>> getTags({int? categoryId}) {
+    return _api.fetchTags(categoryId: categoryId);
+  }
+
+  Future<CategoryTag> createTag({
+    required int categoryId,
+    required String name,
+  }) {
+    return _api.createTag(categoryId: categoryId, name: name);
+  }
+
+  Future<CategoryTag> updateTag({
+    required int id,
+    required String name,
+  }) {
+    return _api.updateTag(id: id, name: name);
+  }
+
+  Future<void> deleteTag(int id) {
+    return _api.deleteTag(id);
   }
 
   Future<HomeData> loadHomeData({DateTime? month}) async {

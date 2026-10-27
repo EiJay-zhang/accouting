@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/report_api.dart';
 import '../constants/app_colors.dart';
 import '../widgets/report_charts.dart';
+import '../widgets/report_palette.dart';
 import '../widgets/transaction_widgets.dart';
 
 class ReportPage extends StatefulWidget {
@@ -48,17 +49,17 @@ class ReportPageState extends State<ReportPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bgPrimary,
+      backgroundColor: AppColors.of(context).bgPrimary,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(20, 20, 20, 0),
               child: Text(
                 '报告',
                 style: TextStyle(
-                  color: AppColors.textPrimary,
+                  color: AppColors.of(context).textPrimary,
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
                 ),
@@ -74,8 +75,8 @@ class ReportPageState extends State<ReportPage> {
                 future: _reportFuture,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: CircularProgressIndicator(color: AppColors.addBtnBg),
+                    return Center(
+                      child: CircularProgressIndicator(color: AppColors.of(context).addBtnBg),
                     );
                   }
 
@@ -85,20 +86,20 @@ class ReportPageState extends State<ReportPage> {
 
                   final report = snapshot.data!;
                   return RefreshIndicator(
-                    color: AppColors.addBtnBg,
-                    backgroundColor: AppColors.bgSecondary,
+                    color: AppColors.of(context).addBtnBg,
+                    backgroundColor: AppColors.of(context).bgSecondary,
                     onRefresh: () async {
                       _loadReport();
                       await _reportFuture;
                     },
                     child: ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.only(bottom: 100),
+                      physics: AlwaysScrollableScrollPhysics(),
+                      padding: EdgeInsets.only(bottom: 100),
                       children: [
                         _buildOverview(report),
-                        const SizedBox(height: 20),
+                        SizedBox(height: 20),
                         ReportCharts(report: report),
-                        const SizedBox(height: 20),
+                        SizedBox(height: 20),
                         _buildCategorySection(report),
                       ],
                     ),
@@ -118,66 +119,64 @@ class ReportPageState extends State<ReportPage> {
         : report.expense / (report.income + report.expense);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: EdgeInsets.symmetric(horizontal: 20),
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: AppColors.bgSecondary,
+          color: AppColors.of(context).bgSecondary,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               '月度概览',
               style: TextStyle(
-                color: AppColors.textSecondary,
+                color: AppColors.of(context).textSecondary,
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
                   child: _buildOverviewMetric(
                     '收入',
                     report.income,
-                    AppColors.incomeGreen,
+                    ReportPalette.incomeInk,
                   ),
                 ),
                 Expanded(
                   child: _buildOverviewMetric(
                     '支出',
                     report.expense,
-                    AppColors.expenseRed,
+                    ReportPalette.expenseInk,
                   ),
                 ),
                 Expanded(
                   child: _buildOverviewMetric(
                     '结余',
                     report.total,
-                    report.total >= 0
-                        ? AppColors.incomeGreen
-                        : AppColors.expenseRed,
+                    report.total >= 0 ? ReportPalette.incomeInk : ReportPalette.expenseInk,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: 20),
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: LinearProgressIndicator(
                 value: expenseRatio,
                 minHeight: 8,
-                backgroundColor: AppColors.incomeGreen.withValues(alpha: 0.25),
-                color: AppColors.expenseRed,
+                backgroundColor: ReportPalette.income.withValues(alpha: 0.45),
+                color: ReportPalette.expense,
               ),
             ),
-            const SizedBox(height: 8),
+            SizedBox(height: 8),
             Text(
               '支出占比 ${(expenseRatio * 100).toStringAsFixed(1)}%',
-              style: const TextStyle(color: AppColors.textTertiary, fontSize: 12),
+              style: TextStyle(color: AppColors.of(context).textTertiary, fontSize: 12),
             ),
           ],
         ),
@@ -191,9 +190,9 @@ class ReportPageState extends State<ReportPage> {
       children: [
         Text(
           label,
-          style: const TextStyle(color: AppColors.textTertiary, fontSize: 12),
+          style: TextStyle(color: AppColors.of(context).textTertiary, fontSize: 12),
         ),
-        const SizedBox(height: 6),
+        SizedBox(height: 6),
         Text(
           '¥${value.toStringAsFixed(2)}',
           style: TextStyle(
@@ -208,12 +207,12 @@ class ReportPageState extends State<ReportPage> {
 
   Widget _buildCategorySection(CategoryReport report) {
     if (report.categories.isEmpty) {
-      return const Padding(
+      return Padding(
         padding: EdgeInsets.symmetric(horizontal: 20, vertical: 40),
         child: Center(
           child: Text(
             '该月暂无分类统计',
-            style: TextStyle(color: AppColors.textTertiary, fontSize: 15),
+            style: TextStyle(color: AppColors.of(context).textTertiary, fontSize: 15),
           ),
         ),
       );
@@ -224,19 +223,19 @@ class ReportPageState extends State<ReportPage> {
         .reduce((a, b) => a > b ? a : b);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: EdgeInsets.symmetric(horizontal: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             '分类统计',
             style: TextStyle(
-              color: AppColors.textSecondary,
+              color: AppColors.of(context).textSecondary,
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           ...report.categories.map(
             (item) => _CategoryReportTile(
               item: item,
@@ -262,14 +261,14 @@ class _CategoryReportTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final ratio = maxAmount == 0 ? 0.0 : item.total / maxAmount;
     final primaryAmount = item.expense > 0 ? item.expense : item.income;
-    final primaryColor =
-        item.expense > 0 ? AppColors.expenseRed : AppColors.incomeGreen;
+    final tone = ReportPalette.category(item.category.id);
+    final primaryColor = item.expense > 0 ? ReportPalette.expenseInk : ReportPalette.incomeInk;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
+      margin: EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.bgSecondary,
+        color: AppColors.of(context).bgSecondary,
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
@@ -280,30 +279,30 @@ class _CategoryReportTile extends StatelessWidget {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: item.category.color.withValues(alpha: 0.2),
+                  color: tone.withValues(alpha: 0.28),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Center(
-                  child: Text(item.category.icon, style: const TextStyle(fontSize: 20)),
+                  child: Text(item.category.icon, style: TextStyle(fontSize: 20)),
                 ),
               ),
-              const SizedBox(width: 12),
+              SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       item.category.name,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
+                      style: TextStyle(
+                        color: AppColors.of(context).textPrimary,
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     Text(
                       '${item.transactionCount} 笔',
-                      style: const TextStyle(
-                        color: AppColors.textTertiary,
+                      style: TextStyle(
+                        color: AppColors.of(context).textTertiary,
                         fontSize: 12,
                       ),
                     ),
@@ -320,14 +319,14 @@ class _CategoryReportTile extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
             child: LinearProgressIndicator(
               value: ratio,
               minHeight: 6,
-              backgroundColor: AppColors.divider.withValues(alpha: 0.4),
-              color: item.category.color,
+              backgroundColor: AppColors.of(context).divider.withValues(alpha: 0.4),
+              color: tone,
             ),
           ),
         ],

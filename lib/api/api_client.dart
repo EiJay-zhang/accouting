@@ -39,6 +39,24 @@ class ApiClient {
     return _decodeList(response);
   }
 
+  Future<Map<String, dynamic>> postMultipart(
+    String path, {
+    required List<int> bytes,
+    required String filename,
+    Map<String, String>? fields,
+  }) async {
+    final request = http.MultipartRequest('POST', _uri(path));
+    request.files.add(
+      http.MultipartFile.fromBytes('file', bytes, filename: filename),
+    );
+    if (fields != null) {
+      request.fields.addAll(fields);
+    }
+    final streamed = await _client.send(request);
+    final response = await http.Response.fromStream(streamed);
+    return _decodeObject(response);
+  }
+
   Future<Map<String, dynamic>> postJson(
     String path,
     Map<String, dynamic> body,
