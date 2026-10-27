@@ -99,59 +99,79 @@ class _IncomeExpenseDonutChart extends StatelessWidget {
       return _ChartEmptyHint(message: '本月暂无收支数据');
     }
 
+    const chartHeight = 220.0;
+    const holeRadius = 52.0;
+    const ringRadius = 58.0;
+    const naturalDiameter = (holeRadius + ringRadius) * 2;
+
     return SizedBox(
-      height: 220,
-      child: Row(
-        children: [
-          Expanded(
-            flex: 3,
-            child: PieChart(
-              PieChartData(
-                sectionsSpace: 2,
-                centerSpaceRadius: 52,
-                startDegreeOffset: -90,
-                sections: [
-                  _pieSection(
-                    value: income,
-                    color: ReportPalette.income,
-                    title: income > 0 ? '${(income / sum * 100).toStringAsFixed(0)}%' : '',
+      height: chartHeight,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const gap = 36.0;
+          const summaryWidth = 148.0;
+          final pieBox = (constraints.maxWidth - gap - summaryWidth)
+              .clamp(96.0, chartHeight);
+          final scale = pieBox / naturalDiameter;
+          return Row(
+            children: [
+              SizedBox(
+                width: pieBox,
+                child: PieChart(
+                  PieChartData(
+                    sectionsSpace: 2,
+                    centerSpaceRadius: holeRadius * scale,
+                    startDegreeOffset: -90,
+                    sections: [
+                      _pieSection(
+                        value: income,
+                        color: ReportPalette.income,
+                        radius: ringRadius * scale,
+                        title: income > 0 ? '${(income / sum * 100).toStringAsFixed(0)}%' : '',
+                      ),
+                      _pieSection(
+                        value: expense,
+                        color: ReportPalette.expense,
+                        radius: ringRadius * scale,
+                        title: expense > 0 ? '${(expense / sum * 100).toStringAsFixed(0)}%' : '',
+                      ),
+                    ],
                   ),
-                  _pieSection(
-                    value: expense,
-                    color: ReportPalette.expense,
-                    title: expense > 0 ? '${(expense / sum * 100).toStringAsFixed(0)}%' : '',
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '¥${total.toStringAsFixed(2)}',
-                  style: TextStyle(
-                    color: total >= 0 ? ReportPalette.incomeInk : ReportPalette.expenseInk,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
+              SizedBox(width: gap),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '¥${total.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          color: total >= 0 ? ReportPalette.incomeInk : ReportPalette.expenseInk,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      '月度结余',
+                      style: TextStyle(color: AppColors.of(context).textTertiary, fontSize: 12),
+                    ),
+                    SizedBox(height: 16),
+                    _LegendItem(color: ReportPalette.income, label: '收入', value: income),
+                    SizedBox(height: 8),
+                    _LegendItem(color: ReportPalette.expense, label: '支出', value: expense),
+                  ],
                 ),
-                SizedBox(height: 4),
-                Text(
-                  '月度结余',
-                  style: TextStyle(color: AppColors.of(context).textTertiary, fontSize: 12),
-                ),
-                SizedBox(height: 16),
-                _LegendItem(color: ReportPalette.income, label: '收入', value: income),
-                SizedBox(height: 8),
-                _LegendItem(color: ReportPalette.expense, label: '支出', value: expense),
-              ],
-            ),
-          ),
-        ],
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -159,13 +179,14 @@ class _IncomeExpenseDonutChart extends StatelessWidget {
   PieChartSectionData _pieSection({
     required double value,
     required Color color,
+    required double radius,
     required String title,
   }) {
     return PieChartSectionData(
       value: value,
       color: color,
       title: title,
-      radius: 58,
+      radius: radius,
       titleStyle: TextStyle(
         color: ReportPalette.label,
         fontSize: 12,
