@@ -6,9 +6,30 @@ import '../models/transaction.dart';
 import '../services/transaction_service.dart';
 
 const _categoryIcons = [
-  '🍜', '🚇', '🛍️', '💰', '🎬', '💊', '📚', '🏠',
-  '☕', '🎮', '✈️', '🎁', '📈', '💵', '💡', '📱',
-  '🚗', '🏋️', '🎵', '🛒', '🏥', '🧧', '💼', '🏷️',
+  '🍜',
+  '🚇',
+  '🛍️',
+  '💰',
+  '🎬',
+  '💊',
+  '📚',
+  '🏠',
+  '☕',
+  '🎮',
+  '✈️',
+  '🎁',
+  '📈',
+  '💵',
+  '💡',
+  '📱',
+  '🚗',
+  '🏋️',
+  '🎵',
+  '🛒',
+  '🏥',
+  '🧧',
+  '💼',
+  '🏷️',
 ];
 
 const _categoryColors = [
@@ -56,9 +77,8 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
     _load();
   }
 
-  List<TransactionCategory> get _visibleCategories => _categories
-      .where((category) => category.type == _selectedType)
-      .toList();
+  List<TransactionCategory> get _visibleCategories =>
+      _categories.where((category) => category.type == _selectedType).toList();
 
   Future<void> _load() async {
     try {
@@ -97,7 +117,10 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.of(context).bgSecondary,
-        title: Text('删除分类', style: TextStyle(color: AppColors.of(context).textPrimary)),
+        title: Text(
+          '删除分类',
+          style: TextStyle(color: AppColors.of(context).textPrimary),
+        ),
         content: Text(
           '确定删除「${category.name}」吗？已有账单的分类不能删除。',
           style: TextStyle(color: AppColors.of(context).textSecondary),
@@ -109,7 +132,10 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text('删除', style: TextStyle(color: AppColors.of(context).expenseRed)),
+            child: Text(
+              '删除',
+              style: TextStyle(color: AppColors.of(context).expenseRed),
+            ),
           ),
         ],
       ),
@@ -121,15 +147,15 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
       if (!mounted) return;
       await _load();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已删除分类')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('已删除分类')));
     } catch (error) {
       if (!mounted) return;
       final message = error is ApiException ? error.message : '删除失败，请稍后重试';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
@@ -238,7 +264,10 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
       return Center(
         child: Text(
           '还没有$label分类',
-          style: TextStyle(color: AppColors.of(context).textTertiary, fontSize: 15),
+          style: TextStyle(
+            color: AppColors.of(context).textTertiary,
+            fontSize: 15,
+          ),
         ),
       );
     }
@@ -281,12 +310,18 @@ class _CategoryManagePageState extends State<CategoryManagePage> {
                 IconButton(
                   tooltip: '编辑',
                   onPressed: () => _openForm(category: category),
-                  icon: Icon(Icons.edit_outlined, color: AppColors.of(context).textSecondary),
+                  icon: Icon(
+                    Icons.edit_outlined,
+                    color: AppColors.of(context).textSecondary,
+                  ),
                 ),
                 IconButton(
                   tooltip: '删除',
                   onPressed: () => _confirmDelete(category),
-                  icon: Icon(Icons.delete_outline, color: AppColors.of(context).expenseRed),
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: AppColors.of(context).expenseRed,
+                  ),
                 ),
               ],
             ),
@@ -301,11 +336,7 @@ class CategoryFormPage extends StatefulWidget {
   final TransactionType type;
   final TransactionCategory? category;
 
-  const CategoryFormPage({
-    super.key,
-    required this.type,
-    this.category,
-  });
+  const CategoryFormPage({super.key, required this.type, this.category});
 
   bool get isEditing => category != null;
 
@@ -384,9 +415,9 @@ class _CategoryFormPageState extends State<CategoryFormPage> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -417,139 +448,158 @@ class _CategoryFormPageState extends State<CategoryFormPage> {
               child: ListView(
                 padding: EdgeInsets.fromLTRB(20, 8, 20, 12),
                 children: [
-            Text(
-              '$typeLabel分类',
-              style: TextStyle(color: AppColors.of(context).textTertiary, fontSize: 13),
-            ),
-            SizedBox(height: 16),
-            Center(
-              child: Container(
-                width: 72,
-                height: 72,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: previewColor.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: Text(
-                  _iconController.text.isEmpty ? '🏷️' : _iconController.text,
-                  style: TextStyle(fontSize: 36),
-                ),
-              ),
-            ),
-            SizedBox(height: 20),
-            _FieldShell(
-              child: TextField(
-                controller: _nameController,
-                enabled: !_submitting,
-                maxLength: 20,
-                style: TextStyle(color: AppColors.of(context).textPrimary, fontSize: 15),
-                decoration: InputDecoration(
-                  counterText: '',
-                  hintText: '分类名称',
-                  hintStyle: TextStyle(color: AppColors.of(context).textTertiary),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-            ),
-            SizedBox(height: 20),
-            Text(
-              '图标',
-              style: TextStyle(
-                color: AppColors.of(context).textSecondary,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            SizedBox(height: 12),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: NeverScrollableScrollPhysics(),
-              itemCount: _categoryIcons.length,
-              gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 56,
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 10,
-              ),
-              itemBuilder: (context, index) {
-                final icon = _categoryIcons[index];
-                final selected = _iconController.text == icon;
-                return GestureDetector(
-                  onTap: _submitting
-                      ? null
-                      : () => setState(() => _iconController.text = icon),
-                  child: Container(
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? previewColor.withValues(alpha: 0.25)
-                          : AppColors.of(context).bgSecondary,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                        color: selected ? previewColor : Colors.transparent,
-                        width: 1.5,
-                      ),
+                  Text(
+                    '$typeLabel分类',
+                    style: TextStyle(
+                      color: AppColors.of(context).textTertiary,
+                      fontSize: 13,
                     ),
-                    child: Text(icon, style: TextStyle(fontSize: 22)),
                   ),
-                );
-              },
-            ),
-            SizedBox(height: 12),
-            _FieldShell(
-              child: TextField(
-                controller: _iconController,
-                enabled: !_submitting,
-                maxLength: 8,
-                onChanged: (_) => setState(() {}),
-                style: TextStyle(color: AppColors.of(context).textPrimary, fontSize: 15),
-                decoration: InputDecoration(
-                  counterText: '',
-                  hintText: '或输入自己的 emoji',
-                  hintStyle: TextStyle(color: AppColors.of(context).textTertiary),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-            ),
-            SizedBox(height: 20),
-            Text(
-              '颜色',
-              style: TextStyle(
-                color: AppColors.of(context).textSecondary,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            SizedBox(height: 12),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                for (final hex in _categoryColors)
-                  GestureDetector(
-                    onTap: _submitting ? null : () => setState(() => _colorHex = hex),
+                  SizedBox(height: 16),
+                  Center(
                     child: Container(
-                      width: 36,
-                      height: 36,
+                      width: 84,
+                      height: 84,
+                      alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: TransactionCategory.colorFromHex(hex),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: _colorHex.toLowerCase() == hex.toLowerCase()
-                              ? Colors.white
-                              : Colors.transparent,
-                          width: 2,
-                        ),
+                        color: previewColor.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      child: _CategoryEmoji(
+                        _iconController.text,
+                        size: 40,
+                        fallback: '🏷️',
                       ),
                     ),
                   ),
-              ],
+                  SizedBox(height: 20),
+                  _FieldShell(
+                    child: TextField(
+                      controller: _nameController,
+                      enabled: !_submitting,
+                      maxLength: 20,
+                      style: TextStyle(
+                        color: AppColors.of(context).textPrimary,
+                        fontSize: 15,
+                      ),
+                      decoration: InputDecoration(
+                        counterText: '',
+                        hintText: '分类名称',
+                        hintStyle: TextStyle(
+                          color: AppColors.of(context).textTertiary,
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 20),
+                  Text(
+                    '图标',
+                    style: TextStyle(
+                      color: AppColors.of(context).textSecondary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  SizedBox(height: 12),
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: NeverScrollableScrollPhysics(),
+                    itemCount: _categoryIcons.length,
+                    gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 56,
+                      mainAxisSpacing: 10,
+                      crossAxisSpacing: 10,
+                    ),
+                    itemBuilder: (context, index) {
+                      final icon = _categoryIcons[index];
+                      final selected = _iconController.text == icon;
+                      return GestureDetector(
+                        onTap: _submitting
+                            ? null
+                            : () => setState(() => _iconController.text = icon),
+                        child: Container(
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? previewColor.withValues(alpha: 0.25)
+                                : AppColors.of(context).bgSecondary,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: selected
+                                  ? previewColor
+                                  : Colors.transparent,
+                              width: 1.5,
+                            ),
+                          ),
+                          child: _CategoryEmoji(icon, size: 26),
+                        ),
+                      );
+                    },
+                  ),
+                  SizedBox(height: 12),
+                  _FieldShell(
+                    child: TextField(
+                      controller: _iconController,
+                      enabled: !_submitting,
+                      maxLength: 8,
+                      onChanged: (_) => setState(() {}),
+                      style: TextStyle(
+                        color: AppColors.of(context).textPrimary,
+                        fontSize: 15,
+                      ),
+                      decoration: InputDecoration(
+                        counterText: '',
+                        hintText: '或输入自己的 emoji',
+                        hintStyle: TextStyle(
+                          color: AppColors.of(context).textTertiary,
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 20),
+                  Text(
+                    '颜色',
+                    style: TextStyle(
+                      color: AppColors.of(context).textSecondary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  SizedBox(height: 12),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      for (final hex in _categoryColors)
+                        GestureDetector(
+                          onTap: _submitting
+                              ? null
+                              : () => setState(() => _colorHex = hex),
+                          child: Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: TransactionCategory.colorFromHex(hex),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color:
+                                    _colorHex.toLowerCase() == hex.toLowerCase()
+                                    ? Colors.white
+                                    : Colors.transparent,
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
-      ),
             Padding(
               padding: EdgeInsets.fromLTRB(20, 8, 20, 16),
               child: SizedBox(
@@ -595,10 +645,7 @@ class _TypeSwitch extends StatelessWidget {
   final TransactionType selected;
   final ValueChanged<TransactionType> onChanged;
 
-  const _TypeSwitch({
-    required this.selected,
-    required this.onChanged,
-  });
+  const _TypeSwitch({required this.selected, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -648,14 +695,18 @@ class _TypeSwitchItem extends StatelessWidget {
         child: Container(
           padding: EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
-            color: selected ? activeColor.withValues(alpha: 0.2) : Colors.transparent,
+            color: selected
+                ? activeColor.withValues(alpha: 0.2)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Center(
             child: Text(
               label,
               style: TextStyle(
-                color: selected ? activeColor : AppColors.of(context).textTertiary,
+                color: selected
+                    ? activeColor
+                    : AppColors.of(context).textTertiary,
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
               ),
@@ -681,6 +732,40 @@ class _FieldShell extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       child: child,
+    );
+  }
+}
+
+class _CategoryEmoji extends StatelessWidget {
+  final String symbol;
+  final double size;
+  final String fallback;
+
+  const _CategoryEmoji(this.symbol, {required this.size, this.fallback = ''});
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmed = symbol.trim();
+    final glyph = trimmed.isEmpty ? fallback : trimmed.characters.first;
+    return SizedBox(
+      width: size + 10,
+      height: size + 10,
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: Text(
+          glyph,
+          textAlign: TextAlign.center,
+          textHeightBehavior: const TextHeightBehavior(
+            applyHeightToFirstAscent: false,
+            applyHeightToLastDescent: false,
+          ),
+          style: TextStyle(
+            fontSize: size,
+            height: 1.25,
+            leadingDistribution: TextLeadingDistribution.even,
+          ),
+        ),
+      ),
     );
   }
 }

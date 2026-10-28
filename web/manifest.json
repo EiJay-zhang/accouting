@@ -1,11 +1,11 @@
 {
-    "name": "account",
-    "short_name": "account",
+    "name": "记账",
+    "short_name": "记账",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#F4F5FB",
+    "theme_color": "#6366F1",
+    "description": "记账",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

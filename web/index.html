@@ -18,21 +18,100 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="记账">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="account">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="记账">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>account</title>
+  <title>记账</title>
   <link rel="manifest" href="manifest.json">
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #F4F5FB;
+    }
+
+    #splash {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #F4F5FB;
+    }
+
+    #splash .mark {
+      position: relative;
+      width: 120px;
+      height: 120px;
+    }
+
+    #splash .ring {
+      position: absolute;
+      inset: 6px;
+      border: 2px solid rgba(99, 102, 241, 0.45);
+      border-radius: 999px;
+      animation: splash-ring 1.4s ease-out infinite;
+    }
+
+    #splash img {
+      position: absolute;
+      left: 16px;
+      top: 16px;
+      width: 88px;
+      height: 88px;
+      border-radius: 22px;
+      animation: splash-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    #splash .name {
+      margin: 18px 0 0;
+      color: #1A1A2E;
+      font: 600 22px -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", sans-serif;
+      letter-spacing: 6px;
+      animation: splash-in 0.7s 0.08s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    @keyframes splash-in {
+      from { opacity: 0; transform: translateY(10px) scale(0.9); }
+      to { opacity: 1; transform: none; }
+    }
+
+    @keyframes splash-ring {
+      from { opacity: 0.5; transform: scale(0.72); }
+      to { opacity: 0; transform: scale(1.25); }
+    }
+
+    @media (prefers-color-scheme: dark) {
+      html, body, #splash { background: #1A1A2E; }
+      #splash .name { color: #FFFFFF; }
+    }
+  </style>
 </head>
 <body>
+  <div id="splash">
+    <div class="mark">
+      <div class="ring"></div>
+      <img src="icons/Icon-192.png" alt="">
+    </div>
+    <p class="name">记账</p>
+  </div>
+  <script>
+    function hideSplash() {
+      var splash = document.getElementById('splash');
+      if (splash) splash.remove();
+    }
+    window.addEventListener('flutter-first-frame', hideSplash);
+  </script>
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader

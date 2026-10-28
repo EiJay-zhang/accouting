@@ -7,7 +7,9 @@ import '../widgets/transaction_widgets.dart';
 import 'add_transaction_page.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final VoidCallback? onDataChanged;
+
+  const HomePage({super.key, this.onDataChanged});
 
   @override
   State<HomePage> createState() => HomePageState();
@@ -15,28 +17,64 @@ class HomePage extends StatefulWidget {
 
 class HomePageState extends State<HomePage> {
   final TransactionService _service = TransactionService();
+  final Set<int> _removedIds = {};
+  late DateTime _month;
   late Future<HomeData> _homeDataFuture;
 
   @override
   void initState() {
     super.initState();
-    _homeDataFuture = _service.loadHomeData();
+    final now = DateTime.now();
+    _month = DateTime(now.year, now.month);
+    _homeDataFuture = _service.loadHomeData(month: _month);
   }
 
   void refresh() {
     setState(() {
-      _homeDataFuture = _service.loadHomeData();
+      _homeDataFuture = _service.loadHomeData(month: _month);
     });
   }
 
+  void _shiftMonth(int delta) {
+    setState(() {
+      _month = DateTime(_month.year, _month.month + delta);
+      _homeDataFuture = _service.loadHomeData(month: _month);
+    });
+  }
+
+  Future<void> _deleteTransaction(Transaction transaction) {
+    return deleteTransactionWithUndo(
+      context: context,
+      transaction: transaction,
+      service: _service,
+      update: setState,
+      removedIds: _removedIds,
+      onChanged: widget.onDataChanged ?? refresh,
+    );
+  }
+
   Future<void> _openEditTransaction(Transaction transaction) async {
-    final updated = await Navigator.of(context).push<bool>(
+    final updated = await Navigator.of(context).push<Object?>(
       MaterialPageRoute(
         builder: (_) => AddTransactionPage(transaction: transaction),
       ),
     );
-    if (updated == true && mounted) {
-      refresh();
+    if (!mounted) return;
+    if (updated == 'deleted') {
+      offerUndoForDeletedTransaction(
+        context: context,
+        transaction: transaction,
+        service: _service,
+        update: setState,
+        removedIds: _removedIds,
+        onChanged: widget.onDataChanged ?? refresh,
+      );
+    } else if (updated == true) {
+      if (widget.onDataChanged != null) {
+        widget.onDataChanged!();
+      } else {
+        refresh();
+      }
     }
   }
 
@@ -50,7 +88,9 @@ class HomePageState extends State<HomePage> {
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return Center(
-                child: CircularProgressIndicator(color: AppColors.of(context).addBtnBg),
+                child: CircularProgressIndicator(
+                  color: AppColors.of(context).addBtnBg,
+                ),
               );
             }
 
@@ -66,6 +106,8 @@ class HomePageState extends State<HomePage> {
                   income: data.summary.income,
                   expense: data.summary.expense,
                   balance: data.summary.total,
+                  onPrevious: () => _shiftMonth(-1),
+                  onNext: () => _shiftMonth(1),
                 ),
                 Expanded(
                   child: RefreshIndicator(
@@ -79,7 +121,7 @@ class HomePageState extends State<HomePage> {
                       physics: AlwaysScrollableScrollPhysics(),
                       padding: EdgeInsets.only(top: 8, bottom: 100),
                       children: [
-                        _buildTransactionList(data.groups),
+                        _buildTransactionList(_visibleGroups(data.groups)),
                       ],
                     ),
                   ),
@@ -92,28 +134,59 @@ class HomePageState extends State<HomePage> {
     );
   }
 
+  List<TransactionGroup> _visibleGroups(List<TransactionGroup> groups) {
+    if (_removedIds.isEmpty) return groups;
+    return [
+      for (final group in groups)
+        if (group.transactions.any((item) => !_removedIds.contains(item.id)))
+          TransactionGroup(
+            date: group.date,
+            transactions: [
+              for (final item in group.transactions)
+                if (!_removedIds.contains(item.id)) item,
+            ],
+            incomeTotal: group.incomeTotal,
+            expenseTotal: group.expenseTotal,
+          ),
+    ];
+  }
+
   Widget _buildTransactionList(List<TransactionGroup> groups) {
     if (groups.isEmpty) {
       return Padding(
         padding: EdgeInsets.symmetric(horizontal: 20, vertical: 40),
         child: Center(
           child: Text(
-            '本月还没有记账记录',
-            style: TextStyle(color: AppColors.of(context).textTertiary, fontSize: 15),
+            '该月还没有记账记录',
+            style: TextStyle(
+              color: AppColors.of(context).textTertiary,
+              fontSize: 15,
+            ),
           ),
         ),
       );
     }
 
     return Column(
-      children: groups
-          .map(
-            (group) => TransactionGroupCard(
-              group: group,
-              onTransactionTap: _openEditTransaction,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
+          child: Text(
+            deleteHintText,
+            style: TextStyle(
+              color: AppColors.of(context).textTertiary,
+              fontSize: 12,
             ),
-          )
-          .toList(),
+          ),
+        ),
+        ...groups.map(
+          (group) => TransactionGroupCard(
+            group: group,
+            onTransactionTap: _openEditTransaction,
+            onTransactionDelete: _deleteTransaction,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -123,12 +196,16 @@ class _MonthOverview extends StatelessWidget {
   final double income;
   final double expense;
   final double balance;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
 
   const _MonthOverview({
     required this.month,
     required this.income,
     required this.expense,
     required this.balance,
+    required this.onPrevious,
+    required this.onNext,
   });
 
   @override
@@ -137,8 +214,8 @@ class _MonthOverview extends StatelessWidget {
     final balanceColor = balance > 0
         ? colors.incomeGreen
         : balance < 0
-            ? colors.expenseRed
-            : colors.textPrimary;
+        ? colors.expenseRed
+        : colors.textPrimary;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
@@ -156,12 +233,42 @@ class _MonthOverview extends StatelessWidget {
                 children: [
                   Row(
                     children: [
+                      IconButton(
+                        tooltip: '上个月',
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
+                        ),
+                        onPressed: onPrevious,
+                        icon: Icon(
+                          Icons.chevron_left,
+                          size: 18,
+                          color: colors.textSecondary,
+                        ),
+                      ),
                       Text(
                         '${month.year}年${month.month}月',
                         style: TextStyle(
                           color: colors.textSecondary,
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: '下个月',
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 28,
+                          minHeight: 28,
+                        ),
+                        onPressed: onNext,
+                        icon: Icon(
+                          Icons.chevron_right,
+                          size: 18,
+                          color: colors.textSecondary,
                         ),
                       ),
                       const Spacer(),

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../config/api_config.dart';
+import '../config/auth_config.dart';
 
 class ApiException implements Exception {
   final int statusCode;
@@ -23,11 +24,23 @@ class ApiClient {
     return Uri.parse('${ApiConfig.baseUrl}$path').replace(queryParameters: query);
   }
 
+  Map<String, String> _headers({bool json = false}) {
+    final headers = <String, String>{};
+    if (json) {
+      headers['Content-Type'] = 'application/json';
+    }
+    final token = AuthConfig.token;
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    return headers;
+  }
+
   Future<Map<String, dynamic>> getJson(
     String path, {
     Map<String, String>? query,
   }) async {
-    final response = await _client.get(_uri(path, query));
+    final response = await _client.get(_uri(path, query), headers: _headers());
     return _decodeObject(response);
   }
 
@@ -35,7 +48,7 @@ class ApiClient {
     String path, {
     Map<String, String>? query,
   }) async {
-    final response = await _client.get(_uri(path, query));
+    final response = await _client.get(_uri(path, query), headers: _headers());
     return _decodeList(response);
   }
 
@@ -49,6 +62,7 @@ class ApiClient {
     request.files.add(
       http.MultipartFile.fromBytes('file', bytes, filename: filename),
     );
+    request.headers.addAll(_headers());
     if (fields != null) {
       request.fields.addAll(fields);
     }
@@ -63,7 +77,7 @@ class ApiClient {
   ) async {
     final response = await _client.post(
       _uri(path),
-      headers: const {'Content-Type': 'application/json'},
+      headers: _headers(json: true),
       body: jsonEncode(body),
     );
     return _decodeObject(response);
@@ -75,27 +89,26 @@ class ApiClient {
   ) async {
     final response = await _client.put(
       _uri(path),
-      headers: const {'Content-Type': 'application/json'},
+      headers: _headers(json: true),
       body: jsonEncode(body),
     );
     return _decodeObject(response);
   }
 
+  Future<List<int>> getBytes(String path) async {
+    final response = await _client.get(_uri(path), headers: _headers());
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return response.bodyBytes;
+    }
+    throw ApiException(response.statusCode, _errorMessage(response));
+  }
+
   Future<void> delete(String path) async {
-    final response = await _client.delete(_uri(path));
+    final response = await _client.delete(_uri(path), headers: _headers());
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return;
     }
-
-    String message = response.reasonPhrase ?? 'Request failed';
-    try {
-      final decoded = jsonDecode(response.body);
-      if (decoded is Map && decoded['detail'] != null) {
-        message = decoded['detail'].toString();
-      }
-    } catch (_) {}
-
-    throw ApiException(response.statusCode, message);
+    throw ApiException(response.statusCode, _errorMessage(response));
   }
 
   Map<String, dynamic> _decodeObject(http.Response response) {
@@ -122,6 +135,13 @@ class ApiClient {
       return jsonDecode(response.body);
     }
 
+    throw ApiException(response.statusCode, _errorMessage(response));
+  }
+
+  String _errorMessage(http.Response response) {
+    if (response.statusCode == 401 && AuthConfig.token != null) {
+      AuthConfig.clear();
+    }
     String message = response.reasonPhrase ?? 'Request failed';
     try {
       final decoded = jsonDecode(response.body);
@@ -129,7 +149,6 @@ class ApiClient {
         message = decoded['detail'].toString();
       }
     } catch (_) {}
-
-    throw ApiException(response.statusCode, message);
+    return message;
   }
 }

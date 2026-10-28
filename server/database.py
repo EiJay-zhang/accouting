@@ -133,6 +133,72 @@ def _migrate_category_type(conn: sqlite3.Connection) -> None:
         conn.isolation_level = previous_isolation
 
 
+def _migrate_users(conn: sqlite3.Connection) -> None:
+    """给旧库补上账号，并把分类改成按账号区分。"""
+    if "user_id" not in _column_names(conn, "categories"):
+        previous_isolation = conn.isolation_level
+        conn.isolation_level = None
+        try:
+            conn.execute("PRAGMA foreign_keys = OFF")
+            conn.execute("BEGIN")
+            try:
+                conn.execute(
+                    """
+                    CREATE TABLE categories_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id INTEGER,
+                        name TEXT NOT NULL,
+                        icon TEXT NOT NULL,
+                        color TEXT NOT NULL,
+                        type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+                        UNIQUE (user_id, name, type),
+                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO categories_new (id, user_id, name, icon, color, type)
+                    SELECT id, NULL, name, icon, color, type FROM categories
+                    """
+                )
+                conn.execute("DROP TABLE categories")
+                conn.execute("ALTER TABLE categories_new RENAME TO categories")
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+        finally:
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.isolation_level = previous_isolation
+
+    if "user_id" not in _column_names(conn, "transactions"):
+        conn.execute("ALTER TABLE transactions ADD COLUMN user_id INTEGER")
+    if "user_id" not in _column_names(conn, "chat_messages"):
+        conn.execute("ALTER TABLE chat_messages ADD COLUMN user_id INTEGER")
+
+    conn.execute("DROP INDEX IF EXISTS idx_transactions_import_key")
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_import_key
+        ON transactions (user_id, source, external_id)
+        WHERE external_id IS NOT NULL AND source IS NOT NULL
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_categories_user_id ON categories (user_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions (user_id)"
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chat_messages_user_id
+        ON chat_messages (user_id)
+        """
+    )
+
+
 def _migrate_import_columns(conn: sqlite3.Connection) -> None:
     """给旧库补上账单来源和外部单号，用来避免重复导入。"""
     columns = _column_names(conn, "transactions")
@@ -149,6 +215,88 @@ def _migrate_import_columns(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migrate_sessions(conn: sqlite3.Connection) -> None:
+    """登录令牌 30 天后失效。旧会话从创建时间起算。"""
+    from datetime import datetime, timedelta
+
+    if "expires_at" not in _column_names(conn, "sessions"):
+        conn.execute("ALTER TABLE sessions ADD COLUMN expires_at TEXT")
+    rows = conn.execute(
+        """
+        SELECT token, created_at
+        FROM sessions
+        WHERE expires_at IS NULL OR expires_at = ''
+        """
+    ).fetchall()
+    for row in rows:
+        created = datetime.fromisoformat(row["created_at"])
+        expires = (created + timedelta(days=30)).isoformat(timespec="seconds")
+        conn.execute(
+            "UPDATE sessions SET expires_at = ? WHERE token = ?",
+            (expires, row["token"]),
+        )
+
+
+def _migrate_amount_cents(conn: sqlite3.Connection) -> None:
+    """把已有金额换成整数分，避免浮点相加出现分位误差。"""
+    if "amount_cents" not in _column_names(conn, "transactions"):
+        conn.execute("ALTER TABLE transactions ADD COLUMN amount_cents INTEGER")
+    conn.execute(
+        """
+        UPDATE transactions
+        SET amount_cents = CAST(ROUND(amount * 100) AS INTEGER)
+        WHERE amount_cents IS NULL
+        """
+    )
+
+
+def _migrate_budgets(conn: sqlite3.Connection) -> None:
+    """月预算保留，并允许单独保存周预算和年预算。"""
+    columns = _column_names(conn, "budgets")
+    if "scope" in columns and "amount_cents" in columns:
+        return
+    previous_isolation = conn.isolation_level
+    conn.isolation_level = None
+    try:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.execute("BEGIN")
+        try:
+            conn.execute(
+                """
+                CREATE TABLE budgets_new (
+                    category_id INTEGER NOT NULL,
+                    scope TEXT NOT NULL CHECK (scope IN ('week', 'month', 'year')),
+                    period_key TEXT NOT NULL,
+                    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+                    PRIMARY KEY (category_id, scope, period_key),
+                    FOREIGN KEY (category_id) REFERENCES categories (id) ON DELETE CASCADE
+                )
+                """
+            )
+            if "year" in columns and "month" in columns and "amount" in columns:
+                conn.execute(
+                    """
+                    INSERT INTO budgets_new (category_id, scope, period_key, amount_cents)
+                    SELECT
+                        category_id,
+                        'month',
+                        printf('%04d-%02d', year, month),
+                        CAST(ROUND(amount * 100) AS INTEGER)
+                    FROM budgets
+                    WHERE amount > 0
+                    """
+                )
+            conn.execute("DROP TABLE budgets")
+            conn.execute("ALTER TABLE budgets_new RENAME TO budgets")
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.isolation_level = previous_isolation
+
+
 def init_db() -> Path:
     """创建表、索引和默认分类。不写入示例账单。"""
     path = get_db_path()
@@ -156,6 +304,10 @@ def init_db() -> Path:
         conn.executescript(_read_sql("schema.sql"))
         _migrate_category_type(conn)
         _migrate_import_columns(conn)
+        _migrate_users(conn)
+        _migrate_sessions(conn)
+        _migrate_amount_cents(conn)
+        _migrate_budgets(conn)
         conn.executescript(_read_sql("seed_categories.sql"))
         _seed_default_tags(conn)
         conn.execute("PRAGMA journal_mode = WAL")
@@ -178,5 +330,12 @@ def seed_demo() -> int:
         if existing:
             return 0
         conn.executescript(_read_sql("seed_demo.sql"))
+        conn.execute(
+            """
+            UPDATE transactions
+            SET amount_cents = CAST(ROUND(amount * 100) AS INTEGER)
+            WHERE amount_cents IS NULL
+            """
+        )
         conn.commit()
         return conn.execute("SELECT COUNT(*) FROM transactions").fetchone()[0]

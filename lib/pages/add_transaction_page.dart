@@ -27,6 +27,8 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
   List<TransactionCategory> _categories = [];
   List<CategoryTag> _tags = [];
   TransactionCategory? _selectedCategory;
+  final Set<int> _selectedTagIds = {};
+  bool _restoredTags = false;
   late DateTime _selectedDate;
   bool _loadingCategories = true;
   bool _submitting = false;
@@ -78,6 +80,16 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
       }
       selected ??= visible.isNotEmpty ? visible.first : null;
 
+      if (!_restoredTags && widget.transaction != null) {
+        _selectedTagIds
+          ..clear()
+          ..addAll(widget.transaction!.tags.map((tag) => tag.id));
+        _restoredTags = true;
+      }
+      _selectedTagIds.removeWhere(
+        (id) => !tags.any((tag) => tag.id == id && tag.categoryId == selected?.id),
+      );
+
       setState(() {
         _categories = categories;
         _tags = tags;
@@ -111,11 +123,29 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
   }
 
   void _applyTag(CategoryTag tag) {
-    final next = _titleController.text == tag.name ? '' : tag.name;
-    _titleController.value = TextEditingValue(
-      text: next,
-      selection: TextSelection.collapsed(offset: next.length),
-    );
+    final selected = _selectedTagIds.contains(tag.id);
+    setState(() {
+      if (selected) {
+        _selectedTagIds.remove(tag.id);
+        if (_titleController.text == tag.name) {
+          _titleController.text = '';
+        }
+      } else {
+        _selectedTagIds.add(tag.id);
+        if (_titleController.text.trim().isEmpty) {
+          _titleController.text = tag.name;
+        }
+      }
+    });
+  }
+
+  void _chooseCategory(TransactionCategory category) {
+    setState(() {
+      _selectedCategory = category;
+      _selectedTagIds.removeWhere(
+        (id) => !_tags.any((tag) => tag.id == id && tag.categoryId == category.id),
+      );
+    });
   }
 
   Future<void> _reloadTags() async {
@@ -350,7 +380,7 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
               for (final tag in _visibleTags)
                 _TagChip(
                   label: tag.name,
-                  selected: _titleController.text == tag.name,
+                  selected: _selectedTagIds.contains(tag.id),
                   onTap: _submitting ? null : () => _applyTag(tag),
                 ),
             ],
@@ -427,6 +457,7 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
     setState(() {
       _selectedType = type;
       _selectedCategory = visible.isNotEmpty ? visible.first : null;
+      _selectedTagIds.clear();
     });
   }
 
@@ -493,8 +524,8 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
           shrinkWrap: true,
           physics: NeverScrollableScrollPhysics(),
           itemCount: visible.length,
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 4,
+          gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 88,
             mainAxisSpacing: 12,
             crossAxisSpacing: 12,
             childAspectRatio: 0.85,
@@ -503,9 +534,7 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
             final cat = visible[index];
             final isSelected = _selectedCategory?.id == cat.id;
             return GestureDetector(
-              onTap: _submitting
-                  ? null
-                  : () => setState(() => _selectedCategory = cat),
+              onTap: _submitting ? null : () => _chooseCategory(cat),
               child: Container(
                 decoration: BoxDecoration(
                   color: isSelected
@@ -619,6 +648,7 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
           amount: amount,
           type: _selectedType,
           date: _selectedDate,
+          tagIds: _selectedTagIds.toList(),
         );
       } else {
         await _service.addTransaction(
@@ -627,6 +657,7 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
           amount: amount,
           type: _selectedType,
           date: _selectedDate,
+          tagIds: _selectedTagIds.toList(),
         );
       }
       if (!mounted) return;
@@ -653,7 +684,7 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
         backgroundColor: AppColors.of(context).bgSecondary,
         title: Text('删除账单', style: TextStyle(color: AppColors.of(context).textPrimary)),
         content: Text(
-          '确定要删除这条账单吗？此操作不可撤销。',
+          '删除后可以在提示里撤销。',
           style: TextStyle(color: AppColors.of(context).textSecondary),
         ),
         actions: [
@@ -675,7 +706,7 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
     try {
       await _service.deleteTransaction(widget.transaction!.id);
       if (!mounted) return;
-      Navigator.pop(context, true);
+      Navigator.pop(context, 'deleted');
     } catch (error) {
       if (!mounted) return;
       final message = error is ApiException

@@ -87,13 +87,29 @@ class TransactionApi {
   Future<List<Transaction>> fetchTransactions({
     required int year,
     required int month,
+    String? keyword,
+    int? categoryId,
+    TransactionType? type,
+    int? tagId,
+    DateTime? start,
+    DateTime? end,
   }) async {
+    final query = <String, String>{
+      'year': '$year',
+      'month': '$month',
+    };
+    if (start != null && end != null) {
+      query['start'] = _formatDate(start);
+      query['end'] = _formatDate(end);
+    }
+    final trimmed = keyword?.trim() ?? '';
+    if (trimmed.isNotEmpty) query['q'] = trimmed;
+    if (categoryId != null) query['category_id'] = '$categoryId';
+    if (type != null) query['type'] = type.name;
+    if (tagId != null) query['tag_id'] = '$tagId';
     final rows = await _client.getJsonList(
       '/api/transactions',
-      query: {
-        'year': '$year',
-        'month': '$month',
-      },
+      query: query,
     );
     return rows
         .map((row) => Transaction.fromJson(row as Map<String, dynamic>))
@@ -120,6 +136,7 @@ class TransactionApi {
     required double amount,
     required TransactionType type,
     DateTime? date,
+    List<int> tagIds = const [],
   }) async {
     final row = await _client.postJson('/api/transactions', {
       'title': title,
@@ -127,6 +144,7 @@ class TransactionApi {
       'amount': amount,
       'type': type.name,
       if (date != null) 'date': _formatDate(date),
+      'tag_ids': tagIds,
     });
     return Transaction.fromJson(row);
   }
@@ -138,6 +156,7 @@ class TransactionApi {
     required double amount,
     required TransactionType type,
     required DateTime date,
+    List<int> tagIds = const [],
   }) async {
     final row = await _client.putJson('/api/transactions/$id', {
       'title': title,
@@ -145,12 +164,21 @@ class TransactionApi {
       'amount': amount,
       'type': type.name,
       'date': _formatDate(date),
+      'tag_ids': tagIds,
     });
     return Transaction.fromJson(row);
   }
 
   Future<void> deleteTransaction(int id) {
     return _client.delete('/api/transactions/$id');
+  }
+
+  Future<List<int>> downloadTransactionsCsv() {
+    return _client.getBytes('/api/exports/transactions.csv');
+  }
+
+  Future<List<int>> downloadBackup() {
+    return _client.getBytes('/api/exports/backup.db');
   }
 
   String _formatDate(DateTime value) {

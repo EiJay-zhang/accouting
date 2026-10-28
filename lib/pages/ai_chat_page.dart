@@ -5,9 +5,13 @@ import '../api/chat_api.dart';
 import '../config/chat_model_config.dart';
 import '../constants/app_colors.dart';
 import '../models/chat_message.dart';
+import '../models/transaction.dart';
+import '../services/transaction_service.dart';
 
 class AiChatPage extends StatefulWidget {
-  const AiChatPage({super.key});
+  final VoidCallback? onDataChanged;
+
+  const AiChatPage({super.key, this.onDataChanged});
 
   @override
   State<AiChatPage> createState() => _AiChatPageState();
@@ -15,6 +19,7 @@ class AiChatPage extends StatefulWidget {
 
 class _AiChatPageState extends State<AiChatPage> {
   final ChatApi _chatApi = ChatApi();
+  final TransactionService _transactions = TransactionService();
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessage> _messages = [];
@@ -33,6 +38,17 @@ class _AiChatPageState extends State<AiChatPage> {
   void initState() {
     super.initState();
     _checkStatus();
+    _loadHistory();
+  }
+
+  Future<void> _loadHistory() async {
+    try {
+      final history = await _chatApi.fetchHistory();
+      if (!mounted || _messages.isNotEmpty) return;
+      setState(() => _messages
+        ..clear()
+        ..addAll(history.where((message) => message.content.isNotEmpty || message.proposal != null)));
+    } catch (_) {}
   }
 
   @override
@@ -70,7 +86,7 @@ class _AiChatPageState extends State<AiChatPage> {
       final history = _includeContext
           ? _messages
           : _messages.where((message) => message.role == ChatRole.user).toList();
-      final reply = await _chatApi.sendMessage(
+      final turn = await _chatApi.sendMessage(
         messages: history,
         includeContext: _includeContext,
         year: now.year,
@@ -80,7 +96,14 @@ class _AiChatPageState extends State<AiChatPage> {
       );
       if (!mounted) return;
       setState(() {
-        _messages.add(ChatMessage(role: ChatRole.assistant, content: reply));
+        _messages.add(
+          ChatMessage(
+            id: turn.assistantMessageId,
+            role: ChatRole.assistant,
+            content: turn.reply,
+            proposal: turn.proposal,
+          ),
+        );
       });
     } catch (error) {
       if (!mounted) return;
@@ -112,8 +135,50 @@ class _AiChatPageState extends State<AiChatPage> {
     });
   }
 
-  void _clearChat() {
+  Future<void> _clearChat() async {
     setState(() => _messages.clear());
+    try {
+      await _chatApi.clearHistory();
+    } catch (_) {}
+  }
+
+  Future<void> _confirmProposal(int index) async {
+    final message = _messages[index];
+    final proposal = message.proposal;
+    if (proposal == null || proposal.applied || proposal.categoryId <= 0) return;
+    try {
+      final categories = await _transactions.getCategories();
+      TransactionCategory? category;
+      for (final item in categories) {
+        if (item.id == proposal.categoryId) {
+          category = item;
+          break;
+        }
+      }
+      if (category == null) {
+        throw ApiException(400, '分类不存在，请重新说一次');
+      }
+      await _transactions.addTransaction(
+        title: proposal.title,
+        category: category,
+        amount: proposal.amount,
+        type: proposal.isExpense ? TransactionType.expense : TransactionType.income,
+        date: DateTime.tryParse(proposal.date),
+      );
+      widget.onDataChanged?.call();
+      if (message.id != null) {
+        await _chatApi.markProposalApplied(message.id!);
+      }
+      if (!mounted) return;
+      setState(() {
+        _messages[index] = message.copyWith(proposal: proposal.copyWith(applied: true));
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已记入账单')));
+    } catch (error) {
+      if (!mounted) return;
+      final text = error is ApiException ? error.message : '记账失败，请稍后重试';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    }
   }
 
   @override
@@ -261,7 +326,7 @@ class _AiChatPageState extends State<AiChatPage> {
               ),
               SizedBox(height: 8),
               Text(
-                '我可以帮你分析收支、解读消费结构、提供省钱建议。',
+                '可以分析收支，也可以直接说：帮我记一笔午餐 28 元。',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.of(context).textTertiary, fontSize: 14),
               ),
@@ -279,28 +344,32 @@ class _AiChatPageState extends State<AiChatPage> {
         if (index == _messages.length) {
           return _buildTypingIndicator();
         }
-        return _MessageBubble(message: _messages[index]);
+        return _MessageBubble(
+          message: _messages[index],
+          onConfirm: _messages[index].proposal == null
+              ? null
+              : () => _confirmProposal(index),
+        );
       },
     );
   }
 
   Widget _buildSuggestions() {
-    return SizedBox(
-      height: 44,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
-        itemCount: _suggestions.length,
-        separatorBuilder: (_, _) => SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          return ActionChip(
-            label: Text(_suggestions[index]),
-            labelStyle: TextStyle(color: AppColors.of(context).textSecondary, fontSize: 12),
-            backgroundColor: AppColors.of(context).bgSecondary,
-            side: BorderSide(color: AppColors.of(context).divider.withValues(alpha: 0.5)),
-            onPressed: _loading ? null : () => _sendMessage(_suggestions[index]),
-          );
-        },
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 0, 20, 12),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final suggestion in _suggestions)
+            ActionChip(
+              label: Text(suggestion),
+              labelStyle: TextStyle(color: AppColors.of(context).textSecondary, fontSize: 12),
+              backgroundColor: AppColors.of(context).bgSecondary,
+              side: BorderSide(color: AppColors.of(context).divider.withValues(alpha: 0.5)),
+              onPressed: _loading ? null : () => _sendMessage(suggestion),
+            ),
+        ],
       ),
     );
   }
@@ -452,8 +521,9 @@ class _ContextToggle extends StatelessWidget {
 
 class _MessageBubble extends StatelessWidget {
   final ChatMessage message;
+  final VoidCallback? onConfirm;
 
-  const _MessageBubble({required this.message});
+  const _MessageBubble({required this.message, this.onConfirm});
 
   @override
   Widget build(BuildContext context) {
@@ -475,25 +545,34 @@ class _MessageBubble extends StatelessWidget {
             SizedBox(width: 8),
           ],
           Flexible(
-            child: Container(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: isUser ? AppColors.of(context).addBtnBg : AppColors.of(context).bgSecondary,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  topRight: Radius.circular(16),
-                  bottomLeft: Radius.circular(isUser ? 16 : 4),
-                  bottomRight: Radius.circular(isUser ? 4 : 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: isUser ? AppColors.of(context).addBtnBg : AppColors.of(context).bgSecondary,
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      topRight: Radius.circular(16),
+                      bottomLeft: Radius.circular(isUser ? 16 : 4),
+                      bottomRight: Radius.circular(isUser ? 4 : 16),
+                    ),
+                  ),
+                  child: Text(
+                    message.content,
+                    style: TextStyle(
+                      color: isUser ? Colors.white : AppColors.of(context).textPrimary,
+                      fontSize: 15,
+                      height: 1.5,
+                    ),
+                  ),
                 ),
-              ),
-              child: Text(
-                message.content,
-                style: TextStyle(
-                  color: isUser ? Colors.white : AppColors.of(context).textPrimary,
-                  fontSize: 15,
-                  height: 1.5,
-                ),
-              ),
+                if (message.proposal != null) ...[
+                  SizedBox(height: 8),
+                  _ProposalCard(proposal: message.proposal!, onConfirm: onConfirm),
+                ],
+              ],
             ),
           ),
           if (isUser) ...[
@@ -504,6 +583,48 @@ class _MessageBubble extends StatelessWidget {
               child: Icon(Icons.person, size: 16, color: AppColors.of(context).textSecondary),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ProposalCard extends StatelessWidget {
+  final RecordProposal proposal;
+  final VoidCallback? onConfirm;
+
+  const _ProposalCard({required this.proposal, this.onConfirm});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final sign = proposal.isExpense ? '-' : '+';
+    return Container(
+      padding: EdgeInsets.fromLTRB(14, 12, 14, 8),
+      decoration: BoxDecoration(
+        color: colors.bgSecondary,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colors.divider.withValues(alpha: 0.6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            proposal.title,
+            style: TextStyle(color: colors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          SizedBox(height: 4),
+          Text(
+            '${proposal.categoryName} · $sign¥${proposal.amount.toStringAsFixed(2)} · ${proposal.date}',
+            style: TextStyle(color: colors.textSecondary, fontSize: 12),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: proposal.applied ? null : onConfirm,
+              child: Text(proposal.applied ? '已记入' : '记入账单'),
+            ),
+          ),
         ],
       ),
     );

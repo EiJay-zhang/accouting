@@ -7,15 +7,21 @@ import 'report_palette.dart';
 
 class ReportCharts extends StatelessWidget {
   final CategoryReport report;
+  final String balanceLabel;
+  final String emptyHint;
 
-  const ReportCharts({super.key, required this.report});
+  const ReportCharts({
+    super.key,
+    required this.report,
+    this.balanceLabel = '月度结余',
+    this.emptyHint = '暂无收支数据',
+  });
 
   @override
   Widget build(BuildContext context) {
-    final expenseItems = report.categories
-        .where((item) => item.expense > 0)
-        .toList()
-      ..sort((a, b) => b.expense.compareTo(a.expense));
+    final expenseItems =
+        report.categories.where((item) => item.expense > 0).toList()
+          ..sort((a, b) => b.expense.compareTo(a.expense));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -26,6 +32,8 @@ class ReportCharts extends StatelessWidget {
             income: report.income,
             expense: report.expense,
             total: report.total,
+            balanceLabel: balanceLabel,
+            emptyHint: emptyHint,
           ),
         ),
         if (expenseItems.isNotEmpty) ...[
@@ -85,55 +93,56 @@ class _IncomeExpenseDonutChart extends StatelessWidget {
   final double income;
   final double expense;
   final double total;
+  final String balanceLabel;
+  final String emptyHint;
 
   const _IncomeExpenseDonutChart({
     required this.income,
     required this.expense,
     required this.total,
+    required this.balanceLabel,
+    required this.emptyHint,
   });
 
   @override
   Widget build(BuildContext context) {
     final sum = income + expense;
     if (sum == 0) {
-      return _ChartEmptyHint(message: '本月暂无收支数据');
+      return _ChartEmptyHint(message: emptyHint);
     }
 
-    const chartHeight = 220.0;
-    const holeRadius = 52.0;
-    const ringRadius = 58.0;
-    const naturalDiameter = (holeRadius + ringRadius) * 2;
-
-    return SizedBox(
-      height: chartHeight,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          const gap = 36.0;
-          const summaryWidth = 148.0;
-          final pieBox = (constraints.maxWidth - gap - summaryWidth)
-              .clamp(96.0, chartHeight);
-          final scale = pieBox / naturalDiameter;
-          return Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final gap = width * 0.08;
+        final pieBox = width * 0.46;
+        return SizedBox(
+          height: pieBox,
+          child: Row(
             children: [
               SizedBox(
                 width: pieBox,
                 child: PieChart(
                   PieChartData(
                     sectionsSpace: 2,
-                    centerSpaceRadius: holeRadius * scale,
+                    centerSpaceRadius: pieBox * 0.236,
                     startDegreeOffset: -90,
                     sections: [
                       _pieSection(
                         value: income,
                         color: ReportPalette.income,
-                        radius: ringRadius * scale,
-                        title: income > 0 ? '${(income / sum * 100).toStringAsFixed(0)}%' : '',
+                        radius: pieBox * 0.264,
+                        title: income > 0
+                            ? '${(income / sum * 100).toStringAsFixed(0)}%'
+                            : '',
                       ),
                       _pieSection(
                         value: expense,
                         color: ReportPalette.expense,
-                        radius: ringRadius * scale,
-                        title: expense > 0 ? '${(expense / sum * 100).toStringAsFixed(0)}%' : '',
+                        radius: pieBox * 0.264,
+                        title: expense > 0
+                            ? '${(expense / sum * 100).toStringAsFixed(0)}%'
+                            : '',
                       ),
                     ],
                   ),
@@ -151,7 +160,9 @@ class _IncomeExpenseDonutChart extends StatelessWidget {
                       child: Text(
                         '¥${total.toStringAsFixed(2)}',
                         style: TextStyle(
-                          color: total >= 0 ? ReportPalette.incomeInk : ReportPalette.expenseInk,
+                          color: total >= 0
+                              ? ReportPalette.incomeInk
+                              : ReportPalette.expenseInk,
                           fontSize: 22,
                           fontWeight: FontWeight.bold,
                         ),
@@ -159,20 +170,31 @@ class _IncomeExpenseDonutChart extends StatelessWidget {
                     ),
                     SizedBox(height: 4),
                     Text(
-                      '月度结余',
-                      style: TextStyle(color: AppColors.of(context).textTertiary, fontSize: 12),
+                      balanceLabel,
+                      style: TextStyle(
+                        color: AppColors.of(context).textTertiary,
+                        fontSize: 12,
+                      ),
                     ),
                     SizedBox(height: 16),
-                    _LegendItem(color: ReportPalette.income, label: '收入', value: income),
+                    _LegendItem(
+                      color: ReportPalette.income,
+                      label: '收入',
+                      value: income,
+                    ),
                     SizedBox(height: 8),
-                    _LegendItem(color: ReportPalette.expense, label: '支出', value: expense),
+                    _LegendItem(
+                      color: ReportPalette.expense,
+                      label: '支出',
+                      value: expense,
+                    ),
                   ],
                 ),
               ),
             ],
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -211,52 +233,62 @@ class _CategoryExpensePieChartState extends State<_CategoryExpensePieChart> {
 
   @override
   Widget build(BuildContext context) {
-    final totalExpense =
-        widget.items.fold(0.0, (sum, item) => sum + item.expense);
+    final totalExpense = widget.items.fold(
+      0.0,
+      (sum, item) => sum + item.expense,
+    );
 
-    return Column(
-      children: [
-        SizedBox(
-          height: 220,
-          child: PieChart(
-            PieChartData(
-              sectionsSpace: 2,
-              centerSpaceRadius: 40,
-              startDegreeOffset: -90,
-              pieTouchData: PieTouchData(
-                touchCallback: (event, response) {
-                  setState(() {
-                    if (!event.isInterestedForInteractions ||
-                        response?.touchedSection == null) {
-                      _touchedIndex = null;
-                      return;
-                    }
-                    _touchedIndex = response!.touchedSection!.touchedSectionIndex;
-                  });
-                },
-              ),
-              sections: List.generate(widget.items.length, (index) {
-                final item = widget.items[index];
-                final isTouched = index == _touchedIndex;
-                final percent = item.expense / totalExpense * 100;
-                return PieChartSectionData(
-                  value: item.expense,
-                  color: ReportPalette.category(item.category.id),
-                  radius: isTouched ? 64 : 56,
-                  title: percent >= 8 ? '${percent.toStringAsFixed(0)}%' : '',
-                  titleStyle: TextStyle(
-                    color: ReportPalette.label,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final diameter = constraints.maxWidth * 0.62;
+        return Column(
+          children: [
+            SizedBox(
+              height: diameter,
+              child: PieChart(
+                PieChartData(
+                  sectionsSpace: 2,
+                  centerSpaceRadius: diameter * 0.208,
+                  startDegreeOffset: -90,
+                  pieTouchData: PieTouchData(
+                    touchCallback: (event, response) {
+                      setState(() {
+                        if (!event.isInterestedForInteractions ||
+                            response?.touchedSection == null) {
+                          _touchedIndex = null;
+                          return;
+                        }
+                        _touchedIndex =
+                            response!.touchedSection!.touchedSectionIndex;
+                      });
+                    },
                   ),
-                );
-              }),
+                  sections: List.generate(widget.items.length, (index) {
+                    final item = widget.items[index];
+                    final isTouched = index == _touchedIndex;
+                    final percent = item.expense / totalExpense * 100;
+                    return PieChartSectionData(
+                      value: item.expense,
+                      color: ReportPalette.category(item.category.id),
+                      radius: diameter * (isTouched ? 0.34 : 0.292),
+                      title: percent >= 8
+                          ? '${percent.toStringAsFixed(0)}%'
+                          : '',
+                      titleStyle: TextStyle(
+                        color: ReportPalette.label,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    );
+                  }),
+                ),
+              ),
             ),
-          ),
-        ),
-        SizedBox(height: 20),
-        _CategoryLegend(items: widget.items),
-      ],
+            SizedBox(height: 20),
+            _CategoryLegend(items: widget.items),
+          ],
+        );
+      },
     );
   }
 }
@@ -268,80 +300,95 @@ class _CategoryBarChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final maxY = items.map((item) => item.expense).reduce((a, b) => a > b ? a : b);
+    final maxY = items
+        .map((item) => item.expense)
+        .reduce((a, b) => a > b ? a : b);
 
-    return SizedBox(
-      height: 220,
-      child: BarChart(
-        BarChartData(
-          maxY: maxY * 1.2,
-          gridData: FlGridData(
-            show: true,
-            drawVerticalLine: false,
-            horizontalInterval: maxY > 0 ? maxY / 4 : 1,
-            getDrawingHorizontalLine: (value) => FlLine(
-              color: AppColors.of(context).divider.withValues(alpha: 0.35),
-              strokeWidth: 1,
-            ),
-          ),
-          borderData: FlBorderData(show: false),
-          titlesData: FlTitlesData(
-            topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 42,
-                getTitlesWidget: (value, meta) {
-                  if (value == 0 || value == meta.max) {
-                    return SizedBox.shrink();
-                  }
-                  return Text(
-                    _compactAmount(value),
-                    style: TextStyle(
-                      color: AppColors.of(context).textTertiary,
-                      fontSize: 10,
-                    ),
-                  );
-                },
-              ),
-            ),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 36,
-                getTitlesWidget: (value, meta) {
-                  final index = value.toInt();
-                  if (index < 0 || index >= items.length) {
-                    return SizedBox.shrink();
-                  }
-                  return Padding(
-                    padding: EdgeInsets.only(top: 10),
-                    child: Text(
-                      items[index].category.icon,
-                      style: TextStyle(fontSize: 18),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-          barGroups: List.generate(items.length, (index) {
-            final item = items[index];
-            return BarChartGroupData(
-              x: index,
-              barRods: [
-                BarChartRodData(
-                  toY: item.expense,
-                  color: ReportPalette.category(item.category.id),
-                  width: 22,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final height = constraints.maxWidth * 0.55;
+        final slot = constraints.maxWidth / items.length;
+        final barWidth = slot * 0.28;
+        return SizedBox(
+          height: height,
+          child: BarChart(
+            BarChartData(
+              maxY: maxY * 1.2,
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                horizontalInterval: maxY > 0 ? maxY / 4 : 1,
+                getDrawingHorizontalLine: (value) => FlLine(
+                  color: AppColors.of(context).divider.withValues(alpha: 0.35),
+                  strokeWidth: 1,
                 ),
-              ],
-            );
-          }),
-        ),
-      ),
+              ),
+              borderData: FlBorderData(show: false),
+              titlesData: FlTitlesData(
+                topTitles: AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                rightTitles: AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 42,
+                    getTitlesWidget: (value, meta) {
+                      if (value == 0 || value == meta.max) {
+                        return SizedBox.shrink();
+                      }
+                      return Text(
+                        _compactAmount(value),
+                        style: TextStyle(
+                          color: AppColors.of(context).textTertiary,
+                          fontSize: 10,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 36,
+                    getTitlesWidget: (value, meta) {
+                      final index = value.toInt();
+                      if (index < 0 || index >= items.length) {
+                        return SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding: EdgeInsets.only(top: 10),
+                        child: Text(
+                          items[index].category.icon,
+                          style: TextStyle(fontSize: 18),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              barGroups: List.generate(items.length, (index) {
+                final item = items[index];
+                return BarChartGroupData(
+                  x: index,
+                  barRods: [
+                    BarChartRodData(
+                      toY: item.expense,
+                      color: ReportPalette.category(item.category.id),
+                      width: barWidth,
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(8),
+                      ),
+                    ),
+                  ],
+                );
+              }),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -366,9 +413,7 @@ class _CategoryLegend extends StatelessWidget {
     return Wrap(
       spacing: 28,
       runSpacing: 12,
-      children: [
-        for (final item in items) _CategoryLegendTile(item: item),
-      ],
+      children: [for (final item in items) _CategoryLegendTile(item: item)],
     );
   }
 }
@@ -441,7 +486,10 @@ class _LegendItem extends StatelessWidget {
         SizedBox(width: 6),
         Text(
           label,
-          style: TextStyle(color: AppColors.of(context).textSecondary, fontSize: 12),
+          style: TextStyle(
+            color: AppColors.of(context).textSecondary,
+            fontSize: 12,
+          ),
         ),
         SizedBox(width: 6),
         Text(
@@ -457,6 +505,87 @@ class _LegendItem extends StatelessWidget {
   }
 }
 
+class MonthlyTrendChart extends StatelessWidget {
+  final List<TrendPoint> points;
+
+  const MonthlyTrendChart({super.key, required this.points});
+
+  @override
+  Widget build(BuildContext context) {
+    if (points.isEmpty) return const SizedBox.shrink();
+    final maxExpense = points
+        .map((item) => item.expense)
+        .fold<double>(0, (a, b) => a > b ? a : b);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final height = constraints.maxWidth * 0.42;
+        final slot = constraints.maxWidth / points.length;
+        return SizedBox(
+          height: height,
+          child: BarChart(
+            BarChartData(
+              maxY: maxExpense <= 0 ? 1 : maxExpense * 1.2,
+              gridData: FlGridData(show: false),
+              borderData: FlBorderData(show: false),
+              titlesData: FlTitlesData(
+                topTitles: AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                rightTitles: AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 28,
+                    getTitlesWidget: (value, meta) {
+                      final index = value.toInt();
+                      if (index < 0 || index >= points.length) {
+                        return const SizedBox.shrink();
+                      }
+                      final label = points[index].label.isNotEmpty
+                          ? points[index].label
+                          : '${points[index].month}月';
+                      return Padding(
+                        padding: EdgeInsets.only(top: 8),
+                        child: Text(
+                          label,
+                          style: TextStyle(
+                            color: AppColors.of(context).textTertiary,
+                            fontSize: points.length > 8 ? 10 : 11,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              barGroups: List.generate(points.length, (index) {
+                return BarChartGroupData(
+                  x: index,
+                  barRods: [
+                    BarChartRodData(
+                      toY: points[index].expense,
+                      color: ReportPalette.expense,
+                      width: slot * 0.38,
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(6),
+                      ),
+                    ),
+                  ],
+                );
+              }),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class _ChartEmptyHint extends StatelessWidget {
   final String message;
 
@@ -464,12 +593,15 @@ class _ChartEmptyHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 160,
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 36),
       child: Center(
         child: Text(
           message,
-          style: TextStyle(color: AppColors.of(context).textTertiary, fontSize: 14),
+          style: TextStyle(
+            color: AppColors.of(context).textTertiary,
+            fontSize: 14,
+          ),
         ),
       ),
     );

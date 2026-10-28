@@ -645,7 +645,7 @@ curl http://127.0.0.1:8000/api/chat/status
 | `migrate_category_type.sql` | 给旧库的分类补上收支类型 | 仅当 `categories` 还没有 `type` 列 |
 | `seed_demo.sql` | 2026 年 8 月示例账单 | 仅 `python3 init_db.py --demo`，且交易表为空 |
 
-服务器上只建空库和默认分类，不要加 `--demo`。
+服务器上只建空库和默认分类，不要加 `--demo`。完整部署步骤见 [docs/backend-deploy.md](docs/backend-deploy.md)。
 
 ```bash
 cd server

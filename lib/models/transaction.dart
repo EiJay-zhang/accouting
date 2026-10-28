@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../utils/money.dart';
+
 enum TransactionType { income, expense }
 
 class TransactionCategory {
@@ -64,31 +66,43 @@ class Transaction {
   final int id;
   final String title;
   final TransactionCategory category;
-  final double amount;
+  final int amountCents;
   final TransactionType type;
   final DateTime date;
+  final List<CategoryTag> tags;
 
   const Transaction({
     required this.id,
     required this.title,
     required this.category,
-    required this.amount,
+    required this.amountCents,
     required this.type,
     required this.date,
+    this.tags = const [],
   });
 
+  double get amount => amountCents / 100;
+
   factory Transaction.fromJson(Map<String, dynamic> json) {
+    final rawTags = json['tags'];
+    final tags = rawTags is List
+        ? rawTags
+            .whereType<Map>()
+            .map((item) => CategoryTag.fromJson(Map<String, dynamic>.from(item)))
+            .toList()
+        : const <CategoryTag>[];
     return Transaction(
       id: json['id'] as int,
       title: json['title'] as String,
       category: TransactionCategory.fromJson(
         json['category'] as Map<String, dynamic>,
       ),
-      amount: (json['amount'] as num).toDouble(),
+      amountCents: centsFromYuan(json['amount'] as num),
       type: json['type'] == 'income'
           ? TransactionType.income
           : TransactionType.expense,
       date: DateTime.parse(json['date'] as String),
+      tags: tags,
     );
   }
 }

@@ -12,7 +12,7 @@ class ChatApi {
     return ChatStatus.fromJson(row);
   }
 
-  Future<String> sendMessage({
+  Future<ChatTurn> sendMessage({
     required List<ChatMessage> messages,
     bool includeContext = true,
     int? year,
@@ -28,7 +28,45 @@ class ChatApi {
       'provider': ?provider,
       'model': ?model,
     });
-    return row['reply'] as String;
+    return ChatTurn.fromJson(row);
+  }
+
+  Future<List<ChatMessage>> fetchHistory() async {
+    final rows = await _client.getJsonList('/api/chat/history');
+    return rows
+        .map((row) => ChatMessage.fromHistory(row as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> clearHistory() {
+    return _client.delete('/api/chat/history');
+  }
+
+  Future<void> markProposalApplied(int messageId) {
+    return _client.postJson('/api/chat/messages/$messageId/applied', {}).then((_) {});
+  }
+}
+
+class ChatTurn {
+  final String reply;
+  final int? assistantMessageId;
+  final RecordProposal? proposal;
+
+  const ChatTurn({
+    required this.reply,
+    this.assistantMessageId,
+    this.proposal,
+  });
+
+  factory ChatTurn.fromJson(Map<String, dynamic> json) {
+    final rawProposal = json['proposal'];
+    return ChatTurn(
+      reply: json['reply'] as String? ?? '',
+      assistantMessageId: json['assistant_message_id'] as int?,
+      proposal: rawProposal is Map
+          ? RecordProposal.fromJson(Map<String, dynamic>.from(rawProposal))
+          : null,
+    );
   }
 }
 

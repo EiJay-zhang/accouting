@@ -64,6 +64,25 @@ class TransactionService {
     return _api.deleteTag(id);
   }
 
+  Future<List<Transaction>> loadFilteredTransactions({
+    required DateTime month,
+    String? keyword,
+    int? categoryId,
+    TransactionType? type,
+    DateTime? start,
+    DateTime? end,
+  }) {
+    return _api.fetchTransactions(
+      year: month.year,
+      month: month.month,
+      keyword: keyword,
+      categoryId: categoryId,
+      type: type,
+      start: start,
+      end: end,
+    );
+  }
+
   Future<HomeData> loadHomeData({DateTime? month}) async {
     final target = month ?? DateTime.now();
     final summary = await _api.fetchSummary(
@@ -88,6 +107,7 @@ class TransactionService {
     required double amount,
     required TransactionType type,
     DateTime? date,
+    List<int> tagIds = const [],
   }) {
     return _api.createTransaction(
       title: title,
@@ -95,6 +115,7 @@ class TransactionService {
       amount: amount,
       type: type,
       date: date,
+      tagIds: tagIds,
     );
   }
 
@@ -105,6 +126,7 @@ class TransactionService {
     required double amount,
     required TransactionType type,
     required DateTime date,
+    List<int> tagIds = const [],
   }) {
     return _api.updateTransaction(
       id: transaction.id,
@@ -113,6 +135,7 @@ class TransactionService {
       amount: amount,
       type: type,
       date: date,
+      tagIds: tagIds,
     );
   }
 
@@ -148,16 +171,16 @@ List<TransactionGroup> groupTransactions(List<Transaction> transactions) {
   for (final entry in map.entries) {
     final income = entry.value
         .where((t) => t.type == TransactionType.income)
-        .fold(0.0, (sum, t) => sum + t.amount);
+        .fold(0, (sum, t) => sum + t.amountCents);
     final expense = entry.value
         .where((t) => t.type == TransactionType.expense)
-        .fold(0.0, (sum, t) => sum + t.amount);
+        .fold(0, (sum, t) => sum + t.amountCents);
     groups.add(
       TransactionGroup(
         date: entry.key,
         transactions: entry.value,
-        incomeTotal: income,
-        expenseTotal: expense,
+        incomeTotal: income / 100,
+        expenseTotal: expense / 100,
       ),
     );
   }
