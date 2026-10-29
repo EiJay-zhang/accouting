@@ -306,6 +306,7 @@ def delete_account(actor_id: int, target_id: int) -> None:
         conn.execute("DELETE FROM sessions WHERE user_id = ?", (target_id,))
         conn.execute("DELETE FROM chat_messages WHERE user_id = ?", (target_id,))
         conn.execute("DELETE FROM transactions WHERE user_id = ?", (target_id,))
+        conn.execute("DELETE FROM items WHERE user_id = ?", (target_id,))
         conn.execute("DELETE FROM categories WHERE user_id = ?", (target_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (target_id,))
         conn.commit()

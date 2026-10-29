@@ -212,6 +212,60 @@ class ChatHistoryItem(BaseModel):
 
 UpdateTransactionIn = CreateTransactionIn
 
+
+ItemStatus = Literal["in_use", "idle", "sold", "retired"]
+
+
+class ItemOut(BaseModel):
+    id: int
+    name: str
+    category_id: Optional[int] = None
+    category: str
+    category_icon: Optional[str] = None
+    category_color: Optional[str] = None
+    amount: float
+    purchase_date: str
+    days_used: int
+    purpose: str
+    status: ItemStatus
+    sold_amount: Optional[float] = None
+    sold_date: Optional[str] = None
+    held_days: Optional[int] = None
+    profit: Optional[float] = None
+    warranty_until: Optional[str] = None
+    note: str = ""
+
+
+class ItemIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    category_id: int = Field(gt=0)
+    amount: float = Field(gt=0, le=100000000)
+    purchase_date: str
+    purpose: str = Field(default="", max_length=200)
+    status: ItemStatus = "in_use"
+    sold_amount: Optional[float] = Field(default=None, ge=0, le=100000000)
+    sold_date: Optional[str] = None
+    warranty_until: Optional[str] = None
+    note: str = Field(default="", max_length=500)
+
+
+class ItemSummaryOut(BaseModel):
+    count: int
+    in_use_count: int
+    total_amount: float
+    daily_cost: float
+    total_profit: float
+
+
+_ITEM_SELECT = """
+    SELECT i.id, i.category_id, c.name AS category, c.icon AS category_icon,
+           c.color AS category_color,
+           i.name, i.amount_cents, i.purchase_date,
+           i.purpose, i.status, i.sold_amount_cents, i.sold_date, i.warranty_until, i.note
+    FROM items i
+    LEFT JOIN categories c ON c.id = i.category_id
+"""
+
 _TRANSACTION_SELECT = """
     SELECT
         t.id,
@@ -682,6 +736,504 @@ def delete_tag(tag_id: int, user_id: int = Depends(require_user)) -> None:
         conn.commit()
 
 
+def _normalize_item_date(raw: Optional[str], *, label: str) -> Optional[str]:
+    text = (raw or "").strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10]).isoformat()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"{label}格式不正确") from exc
+
+
+_ITEM_SOURCE = "item"
+_ITEM_EXT_ID_PREFIX = "item_"
+
+
+def _pick_item_category(conn, user_id: int, item_category: str) -> int:
+    """物品本质是一笔支出，需要一个 expense 分类。
+
+    匹配策略：
+    1. 精确匹配：先在用户的 expense 分类里找和物品分类同名的
+    2. 关键词匹配：按物品分类的关键词选最像的 expense 分类
+    3. 兜底：退回第一个 expense 分类
+    4. 实在没有：自动建一个叫「物品采购」的 expense 分类
+
+    关键词映射表和前端物品分类枚举保持同源，物品分类是固定的
+    （数码电子/家用电器/家具家居/交通工具/服饰鞋包/运动户外/其他），
+    用户记账分类是可自定义的，所以这里做一层"猜最接近的那一个"。
+    """
+    keyword_map = {
+        "数码电子": ["数码", "电子", "手机", "电脑", "笔记本", "平板", "耳机", "相机", "数码电子"],
+        "家用电器": ["家电", "电器", "冰箱", "洗衣机", "空调", "电视", "微波炉", "吸尘器", "家用电器"],
+        "家具家居": ["家具", "家居", "床", "沙发", "衣柜", "桌椅", "装修", "装饰", "家具家居"],
+        "交通工具": ["交通", "出行", "汽车", "电动车", "自行车", "加油", "停车", "交通工具"],
+        "服饰鞋包": ["服饰", "服装", "鞋", "包", "衣服", "穿搭", "购物", "服饰鞋包"],
+        "运动户外": ["运动", "户外", "健身", "打球", "跑步", "骑行", "露营", "运动户外"],
+        "其他": [],
+    }
+
+    def pick_with_keywords(keywords: list[str]) -> Optional[int]:
+        if not keywords:
+            return None
+        placeholders = ",".join("?" for _ in keywords)
+        like_clauses = " OR ".join("c.name LIKE ? ESCAPE '\\'" for _ in keywords)
+        params: list = [user_id]
+        params.extend([_like_pattern(kw) for kw in keywords])
+        params.append(item_category)
+        row = conn.execute(
+            f"""
+            SELECT c.id FROM categories c
+            WHERE c.user_id = ? AND c.type = 'expense'
+              AND ({like_clauses} OR c.name = ?)
+            ORDER BY CASE WHEN c.name = ? THEN 0 ELSE 1 END, c.id ASC
+            LIMIT 1
+            """,
+            (*params, item_category),
+        ).fetchone()
+        return int(row["id"]) if row else None
+
+    exact = pick_with_keywords([item_category])
+    if exact is not None:
+        return exact
+
+    kw_match = pick_with_keywords(keyword_map.get(item_category, []))
+    if kw_match is not None:
+        return kw_match
+
+    row = conn.execute(
+        """
+        SELECT id FROM categories
+        WHERE user_id = ? AND type = 'expense' AND name = '购物'
+        ORDER BY id LIMIT 1
+        """,
+        (user_id,),
+    ).fetchone()
+    if row:
+        return int(row["id"])
+
+    row = conn.execute(
+        """
+        SELECT id FROM categories
+        WHERE user_id = ? AND type = 'expense'
+        ORDER BY id LIMIT 1
+        """,
+        (user_id,),
+    ).fetchone()
+    if row:
+        return int(row["id"])
+
+    cursor = conn.execute(
+        """
+        INSERT INTO categories (user_id, name, icon, color, type)
+        VALUES (?, '物品采购', '📦', '#6366F1', 'expense')
+        """,
+        (user_id,),
+    )
+    return cursor.lastrowid
+
+
+def _link_item_with_transaction(conn, item_id: int, user_id: int) -> None:
+    item = conn.execute(
+        "SELECT * FROM items WHERE id = ? AND user_id = ?", (item_id, user_id)
+    ).fetchone()
+    if item is None:
+        raise HTTPException(status_code=404, detail="物品不存在")
+    category_id = item["category_id"]
+    if category_id is None:
+        raise HTTPException(status_code=400, detail="物品未选择分类")
+    # 每次都校验一遍是 expense 分类
+    _validate_expense_category(conn, user_id, category_id)
+    tx_id = item["transaction_id"]
+    if tx_id is not None:
+        conn.execute(
+            """
+            UPDATE transactions
+            SET title = ?, amount = ?, amount_cents = ?, date = ?, category_id = ?
+            WHERE id = ? AND user_id = ?
+            """,
+            (
+                item["name"],
+                cents_to_yuan(int(item["amount_cents"])),
+                int(item["amount_cents"]),
+                item["purchase_date"],
+                category_id,
+                tx_id,
+                user_id,
+            ),
+        )
+        return
+
+    cursor = conn.execute(
+        """
+        INSERT INTO transactions
+            (user_id, title, category_id, amount, amount_cents,
+             type, date, source, external_id)
+        VALUES (?, ?, ?, ?, ?, 'expense', ?, ?, ?)
+        """,
+        (
+            user_id,
+            item["name"],
+            category_id,
+            cents_to_yuan(int(item["amount_cents"])),
+            int(item["amount_cents"]),
+            item["purchase_date"],
+            _ITEM_SOURCE,
+            f"{_ITEM_EXT_ID_PREFIX}{item_id}",
+        ),
+    )
+    tx_id = cursor.lastrowid
+    conn.execute(
+        "UPDATE items SET transaction_id = ? WHERE id = ?", (tx_id, item_id)
+    )
+
+
+def _remove_item_transaction(conn, item_id: int, user_id: int) -> None:
+    row = conn.execute(
+        "SELECT transaction_id FROM items WHERE id = ? AND user_id = ?",
+        (item_id, user_id),
+    ).fetchone()
+    if row is None or row["transaction_id"] is None:
+        return
+    conn.execute(
+        "DELETE FROM transactions WHERE id = ? AND user_id = ?",
+        (row["transaction_id"], user_id),
+    )
+
+
+def _pick_item_sold_category(conn, user_id: int) -> int:
+    row = conn.execute(
+        """
+        SELECT id FROM categories
+        WHERE user_id = ? AND type = 'income'
+          AND (name = '出售物品' OR name = '出售' OR name = '资产处置')
+        ORDER BY id LIMIT 1
+        """,
+        (user_id,),
+    ).fetchone()
+    if row:
+        return int(row["id"])
+    row = conn.execute(
+        """
+        SELECT id FROM categories
+        WHERE user_id = ? AND type = 'income'
+        ORDER BY id LIMIT 1
+        """,
+        (user_id,),
+    ).fetchone()
+    if row:
+        return int(row["id"])
+    cursor = conn.execute(
+        """
+        INSERT INTO categories (user_id, name, icon, color, type)
+        VALUES (?, '出售物品', '💰', '#F59E0B', 'income')
+        """,
+        (user_id,),
+    )
+    return cursor.lastrowid
+
+
+def _sync_item_transactions(conn, item_id: int, user_id: int) -> None:
+    """根据物品状态处理出售收入账单。
+
+    - status=sold 且已填出售金额/日期：创建或更新 income 账单
+    - 其他情况：如果有 income 账单则删除（物品记录保留）
+    """
+    item = conn.execute(
+        "SELECT * FROM items WHERE id = ? AND user_id = ?", (item_id, user_id)
+    ).fetchone()
+    if item is None:
+        return
+
+    sold_tx_id = item["sold_transaction_id"]
+    if (
+        item["status"] == "sold"
+        and item["sold_amount_cents"] is not None
+        and item["sold_date"] is not None
+    ):
+        if sold_tx_id is not None:
+            # 更新已有 income 账单
+            conn.execute(
+                """
+                UPDATE transactions
+                SET title = ?, amount = ?, amount_cents = ?, date = ?
+                WHERE id = ? AND user_id = ?
+                """,
+                (
+                    f"出售 {item['name']}",
+                    cents_to_yuan(int(item["sold_amount_cents"])),
+                    int(item["sold_amount_cents"]),
+                    item["sold_date"],
+                    sold_tx_id,
+                    user_id,
+                ),
+            )
+            return
+        # 新建 income 账单
+        category_id = _pick_item_sold_category(conn, user_id)
+        cursor = conn.execute(
+            """
+            INSERT INTO transactions
+                (user_id, title, category_id, amount, amount_cents,
+                 type, date, source, external_id)
+            VALUES (?, ?, ?, ?, ?, 'income', ?, ?, ?)
+            """,
+            (
+                user_id,
+                f"出售 {item['name']}",
+                category_id,
+                cents_to_yuan(int(item["sold_amount_cents"])),
+                int(item["sold_amount_cents"]),
+                item["sold_date"],
+                _ITEM_SOURCE,
+                f"{_ITEM_EXT_ID_PREFIX}{item_id}_sold",
+            ),
+        )
+        conn.execute(
+            "UPDATE items SET sold_transaction_id = ? WHERE id = ?",
+            (cursor.lastrowid, item_id),
+        )
+    elif sold_tx_id is not None:
+        # 状态从 sold 切回非 sold，删掉对应的 income 账单
+        conn.execute(
+            "DELETE FROM transactions WHERE id = ? AND user_id = ?",
+            (sold_tx_id, user_id),
+        )
+        conn.execute(
+            "UPDATE items SET sold_transaction_id = NULL WHERE id = ?",
+            (item_id,),
+        )
+
+
+def _remove_item_income_transaction(conn, item_id: int, user_id: int) -> None:
+    row = conn.execute(
+        "SELECT sold_transaction_id FROM items WHERE id = ? AND user_id = ?",
+        (item_id, user_id),
+    ).fetchone()
+    if row is None or row["sold_transaction_id"] is None:
+        return
+    conn.execute(
+        "DELETE FROM transactions WHERE id = ? AND user_id = ?",
+        (row["sold_transaction_id"], user_id),
+    )
+
+
+def _item_out(row) -> ItemOut:
+    purchase = date.fromisoformat(row["purchase_date"])
+    sold_amount_raw = row["sold_amount_cents"]
+    sold_date_raw = row["sold_date"]
+    sold_cents = int(sold_amount_raw) if sold_amount_raw is not None else None
+    sold_date_parsed = (
+        date.fromisoformat(sold_date_raw) if sold_date_raw else None
+    )
+    if row["status"] == "sold" and sold_cents is not None and sold_date_parsed is not None:
+        held = (sold_date_parsed - purchase).days
+        profit = cents_to_yuan(sold_cents - int(row["amount_cents"]))
+    else:
+        held = None
+        profit = None
+    return ItemOut(
+        id=row["id"],
+        name=row["name"],
+        category_id=row["category_id"],
+        category=row["category"] or "未分类",
+        category_icon=row["category_icon"],
+        category_color=row["category_color"],
+        amount=cents_to_yuan(int(row["amount_cents"])),
+        purchase_date=row["purchase_date"],
+        days_used=max((date.today() - purchase).days, 0),
+        purpose=row["purpose"],
+        status=row["status"],
+        sold_amount=cents_to_yuan(sold_cents) if sold_cents is not None else None,
+        sold_date=sold_date_raw,
+        held_days=held,
+        profit=profit,
+        warranty_until=row["warranty_until"],
+        note=row["note"],
+    )
+
+
+def _item_by_id(conn, item_id: int, user_id: int):
+    row = conn.execute(
+        f"{_ITEM_SELECT} WHERE i.id = ? AND i.user_id = ?",
+        (item_id, user_id),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="物品不存在")
+    return row
+
+
+def _validate_expense_category(conn, user_id: int, category_id: int) -> dict:
+    row = conn.execute(
+        "SELECT id, name, icon, color FROM categories WHERE id = ? AND user_id = ? AND type = 'expense'",
+        (category_id, user_id),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=400, detail="分类不存在或不是支出类型")
+    return dict(row)
+
+
+def _item_payload(payload: ItemIn):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="请填写物品名称")
+    cents = yuan_to_cents(payload.amount)
+    if cents <= 0:
+        raise HTTPException(status_code=400, detail="金额需要大于 0")
+    purchase_date = (
+        _normalize_item_date(payload.purchase_date, label="购买日期")
+        or date.today().isoformat()
+    )
+    warranty_until = _normalize_item_date(payload.warranty_until, label="保修到期日")
+
+    if payload.status == "sold":
+        if payload.sold_amount is None:
+            raise HTTPException(status_code=400, detail="已出售状态需要填写出售金额")
+        sold_cents = yuan_to_cents(payload.sold_amount)
+        sold_date = (
+            _normalize_item_date(payload.sold_date, label="出售日期")
+            or date.today().isoformat()
+        )
+    else:
+        sold_cents = None
+        sold_date = None
+
+    return (
+        name,
+        payload.category_id,
+        cents,
+        purchase_date,
+        payload.purpose.strip(),
+        payload.status,
+        sold_cents,
+        sold_date,
+        warranty_until,
+        payload.note.strip(),
+    )
+
+
+@app.get("/api/items", response_model=list[ItemOut])
+def list_items(
+    q: Optional[str] = Query(None, max_length=50),
+    item_status: Optional[ItemStatus] = Query(None, alias="status"),
+    user_id: int = Depends(require_user),
+) -> list[ItemOut]:
+    sql = f"{_ITEM_SELECT} WHERE i.user_id = ?"
+    params: list = [user_id]
+    if item_status is not None:
+        sql += " AND i.status = ?"
+        params.append(item_status)
+    keyword = (q or "").strip()
+    if keyword:
+        pattern = _like_pattern(keyword)
+        sql += " AND (i.name LIKE ? OR i.purpose LIKE ? OR i.note LIKE ?)"
+        params.extend([pattern, pattern, pattern])
+    sql += " ORDER BY i.purchase_date DESC, i.id DESC"
+    with get_connection() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [_item_out(row) for row in rows]
+
+
+@app.get("/api/items/summary", response_model=ItemSummaryOut)
+def items_summary(user_id: int = Depends(require_user)) -> ItemSummaryOut:
+    today = date.today()
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT amount_cents, purchase_date, status, sold_amount_cents FROM items WHERE user_id = ?",
+            (user_id,),
+        ).fetchall()
+    total_cents = 0
+    in_use_count = 0
+    daily_cents = 0.0
+    profit_cents = 0
+    for row in rows:
+        cents = int(row["amount_cents"])
+        total_cents += cents
+        if row["status"] == "in_use":
+            in_use_count += 1
+            used_days = max((today - date.fromisoformat(row["purchase_date"])).days, 1)
+            daily_cents += cents / used_days
+        # 盈亏只统计已出售物品
+        sold = row["sold_amount_cents"]
+        if row["status"] == "sold" and sold is not None:
+            profit_cents += int(sold) - cents
+    return ItemSummaryOut(
+        count=len(rows),
+        in_use_count=in_use_count,
+        total_amount=cents_to_yuan(total_cents),
+        daily_cost=cents_to_yuan(int(round(daily_cents))),
+        total_profit=cents_to_yuan(profit_cents),
+    )
+
+
+@app.post("/api/items", response_model=ItemOut, status_code=201)
+def create_item(payload: ItemIn, user_id: int = Depends(require_user)) -> ItemOut:
+    values = _item_payload(payload)
+    name, category_id, cents, purchase_date, purpose, status, sold_cents, sold_date, warranty_until, note = values
+    created_at = datetime.now().isoformat(timespec="seconds")
+    with get_connection() as conn:
+        # 校验分类
+        _validate_expense_category(conn, user_id, category_id)
+        cursor = conn.execute(
+            """
+            INSERT INTO items
+                (user_id, category_id, name, category, amount_cents, purchase_date,
+                 purpose, status, sold_amount_cents, sold_date,
+                 warranty_until, note, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, category_id, name, "", cents, purchase_date,
+             purpose, status, sold_cents, sold_date,
+             warranty_until, note, created_at),
+        )
+        item_id = cursor.lastrowid
+        _link_item_with_transaction(conn, item_id, user_id)
+        _sync_item_transactions(conn, item_id, user_id)
+        conn.commit()
+        row = _item_by_id(conn, item_id, user_id)
+    return _item_out(row)
+
+
+@app.put("/api/items/{item_id}", response_model=ItemOut)
+def update_item(
+    item_id: int,
+    payload: ItemIn,
+    user_id: int = Depends(require_user),
+) -> ItemOut:
+    values = _item_payload(payload)
+    name, category_id, cents, purchase_date, purpose, status, sold_cents, sold_date, warranty_until, note = values
+    with get_connection() as conn:
+        _item_by_id(conn, item_id, user_id)
+        _validate_expense_category(conn, user_id, category_id)
+        conn.execute(
+            """
+            UPDATE items
+            SET category_id = ?, name = ?, amount_cents = ?, purchase_date = ?,
+                purpose = ?, status = ?, sold_amount_cents = ?, sold_date = ?,
+                warranty_until = ?, note = ?
+            WHERE id = ? AND user_id = ?
+            """,
+            (category_id, name, cents, purchase_date,
+             purpose, status, sold_cents, sold_date,
+             warranty_until, note, item_id, user_id),
+        )
+        _link_item_with_transaction(conn, item_id, user_id)
+        _sync_item_transactions(conn, item_id, user_id)
+        conn.commit()
+        row = _item_by_id(conn, item_id, user_id)
+    return _item_out(row)
+
+
+@app.delete("/api/items/{item_id}", status_code=204)
+def delete_item(item_id: int, user_id: int = Depends(require_user)) -> None:
+    with get_connection() as conn:
+        _item_by_id(conn, item_id, user_id)
+        _remove_item_transaction(conn, item_id, user_id)
+        _remove_item_income_transaction(conn, item_id, user_id)
+        conn.execute("DELETE FROM items WHERE id = ? AND user_id = ?", (item_id, user_id))
+        conn.commit()
+
+
 def _parse_range_bound(raw: str) -> date:
     try:
         return date.fromisoformat(raw[:10])
@@ -989,9 +1541,13 @@ def delete_transaction(transaction_id: int, user_id: int = Depends(require_user)
             "DELETE FROM transactions WHERE id = ? AND user_id = ?",
             (transaction_id, user_id),
         )
-        conn.commit()
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Transaction not found")
+        conn.execute(
+            "UPDATE items SET transaction_id = NULL WHERE transaction_id = ? AND user_id = ?",
+            (transaction_id, user_id),
+        )
+        conn.commit()
 
 
 @app.post("/api/imports/preview", response_model=ImportPreviewOut)
@@ -1300,6 +1856,22 @@ CREATE TABLE budgets (
     amount_cents INTEGER NOT NULL,
     PRIMARY KEY (category_id, scope, period_key)
 );
+CREATE TABLE items (
+    id INTEGER PRIMARY KEY,
+    transaction_id INTEGER,
+    sold_transaction_id INTEGER,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    purchase_date TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    status TEXT NOT NULL,
+    sold_amount_cents INTEGER,
+    sold_date TEXT,
+    warranty_until TEXT,
+    note TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE chat_messages (
     id INTEGER PRIMARY KEY,
     role TEXT NOT NULL,
@@ -1367,6 +1939,15 @@ def export_backup(user_id: int = Depends(require_user)) -> Response:
                     """,
                     (user_id,),
                 ).fetchall()
+                items = conn.execute(
+                    """
+                    SELECT id, transaction_id, sold_transaction_id, name, category,
+                           amount_cents, purchase_date, purpose, status,
+                           sold_amount_cents, sold_date, warranty_until, note, created_at
+                    FROM items WHERE user_id = ? ORDER BY id
+                    """,
+                    (user_id,),
+                ).fetchall()
                 messages = conn.execute(
                     """
                     SELECT id, role, content, proposal, applied, created_at
@@ -1405,6 +1986,17 @@ def export_backup(user_id: int = Depends(require_user)) -> Response:
                 VALUES (?, ?, ?, ?)
                 """,
                 budgets,
+            )
+            _insert_rows(
+                dest,
+                """
+                INSERT INTO items
+                    (id, transaction_id, sold_transaction_id, name, category,
+                     amount_cents, purchase_date, purpose, status,
+                     sold_amount_cents, sold_date, warranty_until, note, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                items,
             )
             _insert_rows(
                 dest,

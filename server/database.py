@@ -1,6 +1,7 @@
 import os
 import sqlite3
 from pathlib import Path
+from typing import Optional
 
 SQL_DIR = Path(__file__).parent / "sql"
 DEFAULT_DB_PATH = Path(__file__).parent / "account.db"
@@ -297,6 +298,174 @@ def _migrate_budgets(conn: sqlite3.Connection) -> None:
         conn.isolation_level = previous_isolation
 
 
+def _migrate_items_transaction_id(conn: sqlite3.Connection) -> None:
+    """物品和账单互相关联 + 物品分类直连 categories 表。
+
+    - transaction_id / sold_transaction_id：物品 ↔ 账单
+    - category_id：物品 ↔ 分类，彻底消除"两套分类"的问题
+    """
+    columns = _column_names(conn, "items")
+    if "transaction_id" not in columns:
+        conn.execute("ALTER TABLE items ADD COLUMN transaction_id INTEGER")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_items_transaction_id ON items (transaction_id)"
+        )
+    if "sold_transaction_id" not in columns:
+        conn.execute("ALTER TABLE items ADD COLUMN sold_transaction_id INTEGER")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_items_sold_transaction_id ON items (sold_transaction_id)"
+        )
+    if "sold_amount_cents" not in columns:
+        conn.execute("ALTER TABLE items ADD COLUMN sold_amount_cents INTEGER")
+    if "sold_date" not in columns:
+        conn.execute("ALTER TABLE items ADD COLUMN sold_date TEXT")
+    if "category_id" not in columns:
+        conn.execute("ALTER TABLE items ADD COLUMN category_id INTEGER")
+        # 用物品原有的 category 文本回填 category_id
+        _backfill_item_category_ids(conn)
+
+
+# 物品关键词 → 通用分类名（按优先级排序）
+# 匹配方向：物品名/物品老category文本中的关键词 → 用户实际分类名
+_KEYWORD_TO_CATEGORY = [
+    # (关键词, 通用分类名)
+    ("数码", "购物"), ("电子", "购物"), ("手机", "购物"), ("电脑", "购物"),
+    ("笔记本", "购物"), ("平板", "购物"), ("耳机", "购物"), ("相机", "购物"),
+    ("家电", "购物"), ("电器", "购物"), ("冰箱", "购物"), ("洗衣机", "购物"),
+    ("空调", "购物"), ("电视", "购物"), ("微波炉", "购物"), ("吸尘器", "购物"),
+    ("家具", "购物"), ("家居", "购物"), ("沙发", "购物"), ("衣柜", "购物"),
+    ("鞋", "购物"), ("服装", "购物"), ("衣服", "购物"), ("包", "购物"),
+    ("汽车", "交通"), ("电动车", "交通"), ("自行车", "交通"), ("加油", "交通"),
+    ("停车", "交通"), ("摩托", "交通"),
+    ("运动", "娱乐"), ("户外", "娱乐"), ("健身", "娱乐"), ("打球", "娱乐"),
+    ("跑步", "娱乐"), ("骑行", "娱乐"), ("露营", "娱乐"),
+    ("药", "医疗"), ("看病", "医疗"), ("体检", "医疗"),
+    ("培训", "教育"), ("学费", "教育"), ("课程", "教育"), ("书本", "教育"),
+    ("房租", "住房"), ("装修", "住房"), ("水电", "住房"), ("物业", "住房"),
+]
+
+
+def _match_category_for_item(name: str, old_category: str, cats: dict, fallback: Optional[int]) -> Optional[int]:
+    """给物品匹配一个合理的 expense 分类。
+
+    匹配优先级：
+    1) 物品名或老category文本精确命中用户分类名 → 直接用
+    2) 关键词命中通用分类名 → 用用户分类中最接近的
+    3) 兜底第一个 expense 分类
+    """
+    # 把物品名和老 category 合并一起搜
+    haystack = f"{name or ''} {old_category or ''}"
+    haystack = haystack.strip()
+    if not haystack:
+        return fallback
+
+    # 1) 精确/包含匹配：物品名直接在用户分类名里出现
+    for cat_name, cat_id in cats.items():
+        if cat_name in haystack or haystack in cat_name:
+            return cat_id
+
+    # 2) 关键词匹配：物品关键词 → 通用分类名 → 找用户里同名的
+    for keyword, suggest_name in _KEYWORD_TO_CATEGORY:
+        if keyword in haystack:
+            # 精确找
+            if suggest_name in cats:
+                return cats[suggest_name]
+            # 模糊：用户分类名包含 suggest_name 或 suggest_name 包含用户分类名
+            for cat_name, cat_id in cats.items():
+                if cat_name in suggest_name or suggest_name in cat_name:
+                    return cat_id
+
+    # 3) 兜底
+    return fallback
+
+
+def _backfill_item_category_ids(conn: sqlite3.Connection) -> None:
+    """确保所有物品都有合理的 category_id。
+
+    - 新物品（category_id 为空）：匹配填入
+    - 已有 category_id 但可能不准确的物品：如果能更准确匹配则修正
+    """
+    users = conn.execute("SELECT DISTINCT user_id FROM items").fetchall()
+    total_filled = 0
+    total_fixed = 0
+    for (uid,) in users:
+        items = conn.execute(
+            "SELECT id, name, category, category_id FROM items WHERE user_id = ?",
+            (uid,),
+        ).fetchall()
+        if not items:
+            continue
+        # 该用户的 expense 分类
+        cats = {
+            row["name"]: row["id"]
+            for row in conn.execute(
+                "SELECT id, name FROM categories WHERE user_id = ? AND type = 'expense'",
+                (uid,),
+            ).fetchall()
+        }
+        if not cats:
+            continue
+        # 兜底：第一个 expense 分类
+        fallback = min(cats.values())
+
+        for item in items:
+            item_id = item["id"]
+            current = item["category_id"]
+            target = _match_category_for_item(
+                item["name"], item["category"] or "", cats, fallback
+            )
+            if target is None:
+                continue
+            if current is None:
+                conn.execute(
+                    "UPDATE items SET category_id = ? WHERE id = ?",
+                    (target, item_id),
+                )
+                total_filled += 1
+            elif current != target:
+                conn.execute(
+                    "UPDATE items SET category_id = ? WHERE id = ?",
+                    (target, item_id),
+                )
+                total_fixed += 1
+    conn.commit()
+    if total_filled or total_fixed:
+        print(f"  [migrate] 物品分类: 新填 {total_filled} 条, 修正 {total_fixed} 条")
+
+
+def _sync_item_expense_transactions(conn: sqlite3.Connection) -> None:
+    """老物品迁移后，关联的 expense 账单 category_id 可能与 items.category_id 不一致。
+
+    只同步 expense 类型的关联账单（external_id = 'item_{id}'），
+    income 类型的出售账单（'item_{id}_sold'）保持不动——它用的是独立的收入分类。
+    """
+    # 只扫描 source='item' 且 category_id 可能需要同步的
+    rows = conn.execute("""
+        SELECT i.id, i.category_id, i.user_id
+        FROM items i
+        WHERE i.category_id IS NOT NULL
+    """).fetchall()
+    updated = 0
+    for item in rows:
+        item_id = item["id"]
+        cat_id = item["category_id"]
+        uid = item["user_id"]
+        # 更新 expense 账单（external_id 精确匹配 item_{id}，不是 item_{id}_sold）
+        cursor = conn.execute("""
+            UPDATE transactions
+            SET category_id = ?
+            WHERE source = 'item'
+              AND user_id = ?
+              AND type = 'expense'
+              AND external_id = ?
+              AND category_id != ?
+        """, (cat_id, uid, f"item_{item_id}", cat_id))
+        updated += cursor.rowcount
+    conn.commit()
+    if updated:
+        print(f"  [migrate] 同步了 {updated} 条物品关联的 expense 账单 category_id")
+
+
 def init_db() -> Path:
     """创建表、索引和默认分类。不写入示例账单。"""
     path = get_db_path()
@@ -308,6 +477,9 @@ def init_db() -> Path:
         _migrate_sessions(conn)
         _migrate_amount_cents(conn)
         _migrate_budgets(conn)
+        _migrate_items_transaction_id(conn)
+        _backfill_item_category_ids(conn)
+        _sync_item_expense_transactions(conn)
         conn.executescript(_read_sql("seed_categories.sql"))
         _seed_default_tags(conn)
         conn.execute("PRAGMA journal_mode = WAL")

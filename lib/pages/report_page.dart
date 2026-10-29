@@ -7,6 +7,7 @@ import '../models/transaction.dart';
 import '../widgets/report_charts.dart';
 import '../widgets/report_palette.dart';
 import '../widgets/transaction_widgets.dart';
+import 'ai_chat_page.dart';
 
 class ReportPage extends StatefulWidget {
   final void Function(
@@ -215,13 +216,33 @@ class ReportPageState extends State<ReportPage> {
           children: [
             Padding(
               padding: EdgeInsets.fromLTRB(20, 20, 20, 0),
-              child: Text(
-                '报告',
-                style: TextStyle(
-                  color: AppColors.of(context).textPrimary,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
+              child: Row(
+                children: [
+                  Text(
+                    '报告',
+                    style: TextStyle(
+                      color: AppColors.of(context).textPrimary,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton.filled(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const AiChatPage(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.auto_awesome, size: 18),
+                    style: IconButton.styleFrom(
+                      backgroundColor: AppColors.of(context).addBtnBg,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(40, 40),
+                    ),
+                  ),
+                ],
               ),
             ),
             Padding(

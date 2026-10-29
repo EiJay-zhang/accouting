@@ -11,9 +11,9 @@ import 'pages/auth_page.dart';
 import 'pages/home_page.dart';
 import 'pages/add_transaction_page.dart';
 import 'pages/bills_page.dart';
+import 'pages/items_page.dart';
 import 'pages/report_page.dart';
 import 'pages/settings_page.dart';
-import 'pages/ai_chat_page.dart';
 import 'widgets/app_splash.dart';
 
 Future<void> main() async {
@@ -78,7 +78,7 @@ class _MainShellState extends State<MainShell> {
   late final List<Widget> _pages = [
     HomePage(key: _homePageKey, onDataChanged: _refreshAllPages),
     BillsPage(key: _billsPageKey, onDataChanged: _refreshAllPages),
-    AiChatPage(onDataChanged: _refreshAllPages),
+    ItemsPage(onDataChanged: _refreshAllPages),
     ReportPage(key: _reportPageKey, onOpenCategory: _openCategoryBills),
     SettingsPage(
       onApiConfigChanged: _refreshAllPages,
@@ -178,9 +178,9 @@ class _MainShellState extends State<MainShell> {
             label: '账单',
           ),
           NavigationDestination(
-            icon: Icon(Icons.auto_awesome_outlined),
-            selectedIcon: Icon(Icons.auto_awesome),
-            label: 'AI',
+            icon: Icon(Icons.inventory_2_outlined),
+            selectedIcon: Icon(Icons.inventory_2),
+            label: '物品',
           ),
           NavigationDestination(
             icon: Icon(Icons.bar_chart_outlined),

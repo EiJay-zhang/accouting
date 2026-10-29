@@ -77,6 +77,33 @@ CREATE TABLE IF NOT EXISTS budgets (
     FOREIGN KEY (category_id) REFERENCES categories (id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    transaction_id INTEGER,
+    sold_transaction_id INTEGER,
+    category_id INTEGER,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT '',
+    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+    purchase_date TEXT NOT NULL,
+    purpose TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'in_use'
+        CHECK (status IN ('in_use', 'idle', 'sold', 'retired')),
+    sold_amount_cents INTEGER,
+    sold_date TEXT,
+    warranty_until TEXT,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    FOREIGN KEY (transaction_id) REFERENCES transactions (id) ON DELETE SET NULL,
+    FOREIGN KEY (sold_transaction_id) REFERENCES transactions (id) ON DELETE SET NULL,
+    FOREIGN KEY (category_id) REFERENCES categories (id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_items_user_id
+    ON items (user_id, purchase_date);
+
 CREATE TABLE IF NOT EXISTS chat_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
