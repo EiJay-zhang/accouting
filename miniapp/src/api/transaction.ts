@@ -129,3 +129,67 @@ export function deleteTransaction(id: number): Promise<void> {
     method: 'DELETE',
   })
 }
+
+export interface CategoryPayload {
+  [key: string]: unknown
+  name: string
+  icon: string
+  color: string
+  type: TransactionType
+}
+
+export interface CategoryUpdatePayload {
+  [key: string]: unknown
+  name: string
+  icon: string
+  color: string
+}
+
+export function createCategory(payload: CategoryPayload): Promise<Category> {
+  return request<Category>({
+    url: '/api/categories',
+    method: 'POST',
+    data: payload,
+  })
+}
+
+export function updateCategory(
+  id: number,
+  payload: CategoryUpdatePayload,
+): Promise<Category> {
+  return request<Category>({
+    url: `/api/categories/${id}`,
+    method: 'PUT',
+    data: payload,
+  })
+}
+
+export function deleteCategory(id: number): Promise<void> {
+  return request<void>({
+    url: `/api/categories/${id}`,
+    method: 'DELETE',
+  })
+}
+
+export function createTag(categoryId: number, name: string): Promise<CategoryTag> {
+  return request<CategoryTag>({
+    url: '/api/tags',
+    method: 'POST',
+    data: { category_id: categoryId, name },
+  })
+}
+
+export function updateTag(id: number, name: string): Promise<CategoryTag> {
+  return request<CategoryTag>({
+    url: `/api/tags/${id}`,
+    method: 'PUT',
+    data: { name },
+  })
+}
+
+export function deleteTag(id: number): Promise<void> {
+  return request<void>({
+    url: `/api/tags/${id}`,
+    method: 'DELETE',
+  })
+}

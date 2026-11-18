@@ -45,6 +45,11 @@ export function clearSession(): void {
   uni.removeStorageSync(STORAGE_KEYS.user)
 }
 
+export function updateSessionUser(user: AppUser): void {
+  session.user = user
+  uni.setStorageSync(STORAGE_KEYS.user, user)
+}
+
 export function fetchAuthStatus(): Promise<AuthStatus> {
   return request<AuthStatus>({
     url: '/api/auth/status',
@@ -118,5 +123,13 @@ export async function logout(): Promise<void> {
   } catch {
     // 本地退出优先，不阻塞用户
   }
+  clearSession()
+}
+
+export async function deleteAccount(): Promise<void> {
+  await request<void>({
+    url: '/api/auth/me',
+    method: 'DELETE',
+  })
   clearSession()
 }

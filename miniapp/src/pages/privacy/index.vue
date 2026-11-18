@@ -7,6 +7,31 @@ const updatedAt = '2026-11-18'
     <text class="privacy-page__title">用户协议与隐私政策</text>
     <text class="privacy-page__date">更新日期：{{ updatedAt }}</text>
 
+    <text class="privacy-page__part">用户协议</text>
+
+    <view class="section">
+      <text class="section__title">一、服务说明</text>
+      <text class="section__text">
+        本小程序为你提供个人记账、账单统计、物品管理和数据导入导出服务。你可以免费使用基础功能，服务内容可能随版本更新调整。
+      </text>
+    </view>
+
+    <view class="section">
+      <text class="section__title">二、账号与使用规范</text>
+      <text class="section__text">
+        请妥善保管账号和密码，因个人保管不当造成的损失由你自行承担。你应保证录入和导入的数据来源合法，不得利用本服务从事违法违规活动。
+      </text>
+    </view>
+
+    <view class="section">
+      <text class="section__title">三、数据与免责</text>
+      <text class="section__text">
+        账本数据由你自行录入，统计结果仅作个人参考，不构成任何财务或投资建议。因不可抗力、网络故障或第三方服务异常导致的服务中断，我们会尽力恢复但无法承担由此产生的间接损失。
+      </text>
+    </view>
+
+    <text class="privacy-page__part">隐私政策</text>
+
     <view class="section">
       <text class="section__title">一、我们收集的信息</text>
       <text class="section__text">
@@ -71,6 +96,14 @@ const updatedAt = '2026-11-18'
     margin-top: 48rpx;
     font-size: 24rpx;
     color: var(--color-text-tertiary);
+  }
+
+  &__part {
+    display: block;
+    margin-top: 40rpx;
+    font-size: 32rpx;
+    font-weight: 700;
+    color: var(--color-text);
   }
 }
 

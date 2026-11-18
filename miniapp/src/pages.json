@@ -47,6 +47,24 @@
       }
     },
     {
+      "path": "pages/user-manage/index",
+      "style": {
+        "navigationBarTitleText": "账号与资料"
+      }
+    },
+    {
+      "path": "pages/category-manage/index",
+      "style": {
+        "navigationBarTitleText": "分类管理"
+      }
+    },
+    {
+      "path": "pages/tag-manage/index",
+      "style": {
+        "navigationBarTitleText": "标签设置"
+      }
+    },
+    {
       "path": "pages/privacy/index",
       "style": {
         "navigationBarTitleText": "用户协议与隐私政策"
