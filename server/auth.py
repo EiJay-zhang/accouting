@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import os
 import re
 import secrets
 import sqlite3
@@ -8,6 +9,7 @@ from typing import Optional
 
 from fastapi import Depends, Header, HTTPException
 
+import wechat
 from database import get_connection
 
 _USERNAME = re.compile(r"^[\w\u4e00-\u9fff]{2,20}$")
@@ -168,17 +170,49 @@ def _open_session(conn, user_id: int) -> str:
     return token
 
 
+def _registration_enabled() -> bool:
+    raw = os.environ.get("REGISTER_ENABLED", "true").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _invite_code() -> str:
+    return os.environ.get("REGISTER_INVITE_CODE", "").strip()
+
+
+def _ensure_registration_allowed(conn, invite_code: Optional[str]) -> None:
+    # 首个账号始终允许注册，否则全新部署时无法初始化。
+    count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    if count == 0:
+        return
+    if not _registration_enabled():
+        raise HTTPException(status_code=403, detail="注册已关闭")
+    expected = _invite_code()
+    if expected and (invite_code or "").strip() != expected:
+        raise HTTPException(status_code=403, detail="邀请码不正确")
+
+
 def auth_status() -> dict:
     with get_connection() as conn:
         count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    return {"has_users": bool(count)}
+    return {
+        "has_users": bool(count),
+        "registration_open": bool(count) == 0 or _registration_enabled(),
+        "invite_code_required": bool(_invite_code()),
+        "wechat_login_configured": wechat.is_configured(),
+    }
 
 
-def register_account(username: str, password: str, display_name: Optional[str]) -> dict:
+def register_account(
+    username: str,
+    password: str,
+    display_name: Optional[str],
+    invite_code: Optional[str] = None,
+) -> dict:
     username = _clean_username(username)
     password = _clean_password(password)
     display_name = _clean_display_name(display_name, username)
     with get_connection() as conn:
+        _ensure_registration_allowed(conn, invite_code)
         row = _insert_user(conn, username, password, display_name)
         token = _open_session(conn, int(row["id"]))
         conn.commit()
@@ -194,6 +228,37 @@ def login_account(username: str, password: str) -> dict:
         ).fetchone()
         if row is None or not verify_password(password, row["password_hash"]):
             raise HTTPException(status_code=401, detail="用户名或密码不正确")
+        token = _open_session(conn, int(row["id"]))
+        conn.commit()
+    return {"token": token, "user": _user_out(row)}
+
+
+def login_with_wechat(code: str) -> dict:
+    """用小程序 wx.login 的 code 登录；首次登录自动创建账号。"""
+    openid = wechat.exchange_code(code)
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE wx_openid = ?",
+            (openid,),
+        ).fetchone()
+        if row is None:
+            base = "wx_" + re.sub(r"\W", "", openid)[:16]
+            username = base
+            suffix = 1
+            while conn.execute(
+                "SELECT 1 FROM users WHERE username = ? COLLATE NOCASE",
+                (username,),
+            ).fetchone():
+                username = f"{base[:15]}{suffix}"
+                suffix += 1
+            row = _insert_user(conn, username, secrets.token_urlsafe(24), "微信用户")
+            conn.execute(
+                "UPDATE users SET wx_openid = ? WHERE id = ?",
+                (openid, int(row["id"])),
+            )
+            row = conn.execute(
+                "SELECT * FROM users WHERE id = ?", (int(row["id"]),)
+            ).fetchone()
         token = _open_session(conn, int(row["id"]))
         conn.commit()
     return {"token": token, "user": _user_out(row)}
@@ -311,35 +376,48 @@ def create_account(username: str, password: str, display_name: Optional[str]) ->
     return _user_out(row)
 
 
+def _purge_user(conn, user_id: int) -> None:
+    # 按外键依赖顺序清理，避免悬挂数据
+    conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM chat_messages WHERE user_id = ?", (user_id,))
+    conn.execute(
+        "DELETE FROM transaction_tags WHERE transaction_id IN "
+        "(SELECT id FROM transactions WHERE user_id = ?)",
+        (user_id,),
+    )
+    conn.execute("DELETE FROM transactions WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM items WHERE user_id = ?", (user_id,))
+    # tags 依赖 categories
+    conn.execute(
+        "DELETE FROM tags WHERE category_id IN "
+        "(SELECT id FROM categories WHERE user_id = ?)",
+        (user_id,),
+    )
+    # budgets 依赖 categories
+    conn.execute(
+        "DELETE FROM budgets WHERE category_id IN "
+        "(SELECT id FROM categories WHERE user_id = ?)",
+        (user_id,),
+    )
+    conn.execute("DELETE FROM categories WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+
 def delete_account(actor_id: int, target_id: int) -> None:
     if actor_id == target_id:
-        raise HTTPException(status_code=400, detail="不能删除当前登录的账号")
+        raise HTTPException(status_code=400, detail="不能删除当前登录的账号，请使用注销接口")
     with get_connection() as conn:
         row = conn.execute("SELECT id FROM users WHERE id = ?", (target_id,)).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="账号不存在")
-        # 按外键依赖顺序清理，避免悬挂数据
-        conn.execute("DELETE FROM sessions WHERE user_id = ?", (target_id,))
-        conn.execute("DELETE FROM chat_messages WHERE user_id = ?", (target_id,))
-        conn.execute(
-            "DELETE FROM transaction_tags WHERE transaction_id IN "
-            "(SELECT id FROM transactions WHERE user_id = ?)",
-            (target_id,),
-        )
-        conn.execute("DELETE FROM transactions WHERE user_id = ?", (target_id,))
-        conn.execute("DELETE FROM items WHERE user_id = ?", (target_id,))
-        # tags 依赖 categories
-        conn.execute(
-            "DELETE FROM tags WHERE category_id IN "
-            "(SELECT id FROM categories WHERE user_id = ?)",
-            (target_id,),
-        )
-        # budgets 依赖 categories
-        conn.execute(
-            "DELETE FROM budgets WHERE category_id IN "
-            "(SELECT id FROM categories WHERE user_id = ?)",
-            (target_id,),
-        )
-        conn.execute("DELETE FROM categories WHERE user_id = ?", (target_id,))
-        conn.execute("DELETE FROM users WHERE id = ?", (target_id,))
+        _purge_user(conn, target_id)
+        conn.commit()
+
+
+def delete_self(user_id: int) -> None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        if row is None:
+            raise HTTPException(status_code=401, detail="登录已失效，请重新登录")
+        _purge_user(conn, user_id)
         conn.commit()

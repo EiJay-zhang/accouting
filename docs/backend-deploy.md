@@ -70,6 +70,10 @@ KIMI_MODEL=kimi-k2.6
 | `KIMI_API_KEY` | Kimi 密钥。也认 `MOONSHOT_API_KEY` |
 | `KIMI_BASE_URL` | 默认 `https://api.moonshot.cn/v1` |
 | `KIMI_MODEL` | 默认模型，可用 `kimi-k2.6` 或 `kimi-k3.1-pro` |
+| `REGISTER_ENABLED` | 设为 `false` 关闭新账号注册。首个账号始终允许注册，用于初始化 |
+| `REGISTER_INVITE_CODE` | 设置后，后续注册必须携带相同邀请码 |
+| `WX_APPID` | 微信小程序 AppID，仅服务端使用 |
+| `WX_SECRET` | 微信小程序 AppSecret，只放服务端，禁止写入小程序代码 |
 
 改完 `.env` 需要重启进程。程序从 `server/.env` 读取，不会覆盖系统里已经存在的同名环境变量。
 

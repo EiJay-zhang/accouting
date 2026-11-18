@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     display_name TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    is_admin INTEGER NOT NULL DEFAULT 0
+    is_admin INTEGER NOT NULL DEFAULT 0,
+    wx_openid TEXT
 );
 
 CREATE TABLE IF NOT EXISTS sessions (

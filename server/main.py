@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from openpyxl import Workbook
+from openpyxl.styles import Font
 from pydantic import BaseModel, Field
 
 from bill_import import SOURCE_LABELS, parse_bill, suggest_category
@@ -20,8 +22,10 @@ from auth import (
     create_account,
     current_profile,
     delete_account,
+    delete_self,
     list_accounts,
     login_account,
+    login_with_wechat,
     logout_account,
     register_account,
     require_admin,
@@ -301,11 +305,15 @@ def _stored_amount(yuan: float) -> tuple[float, int]:
     return cents / 100, cents
 
 
-def _yuan_from_row(row) -> float:
+def _cents_from_row(row) -> int:
     cents = row["amount_cents"]
     if cents is None:
         cents = yuan_to_cents(row["amount"])
-    return cents_to_yuan(int(cents))
+    return int(cents)
+
+
+def _yuan_from_row(row) -> float:
+    return cents_to_yuan(_cents_from_row(row))
 
 
 def _row_to_transaction(row: dict, tags: Optional[list[TagOut]] = None) -> TransactionOut:
@@ -513,6 +521,11 @@ class AuthIn(BaseModel):
     username: str
     password: str
     display_name: Optional[str] = None
+    invite_code: Optional[str] = None
+
+
+class WechatLoginIn(BaseModel):
+    code: str
 
 
 class ProfileIn(BaseModel):
@@ -528,12 +541,22 @@ def get_auth_status() -> dict:
 
 @app.post("/api/auth/register")
 def register(payload: AuthIn) -> dict:
-    return register_account(payload.username, payload.password, payload.display_name)
+    return register_account(
+        payload.username,
+        payload.password,
+        payload.display_name,
+        payload.invite_code,
+    )
 
 
 @app.post("/api/auth/login")
 def login(payload: AuthIn) -> dict:
     return login_account(payload.username, payload.password)
+
+
+@app.post("/api/auth/wx-login")
+def login_wechat(payload: WechatLoginIn) -> dict:
+    return login_with_wechat(payload.code)
 
 
 @app.post("/api/auth/logout", status_code=204)
@@ -554,6 +577,12 @@ def edit_me(payload: ProfileIn, user_id: int = Depends(require_user)) -> dict:
         payload.current_password,
         payload.new_password,
     )
+
+
+@app.delete("/api/auth/me", status_code=204)
+def delete_me(user_id: int = Depends(require_user)) -> None:
+    """注销当前登录账号，并删除该账号的全部账本数据。"""
+    delete_self(user_id)
 
 
 @app.get("/api/users")
@@ -1846,34 +1875,76 @@ def delete_budget(payload: BudgetDeleteIn, user_id: int = Depends(require_user))
         conn.commit()
 
 
-@app.get("/api/exports/transactions.csv")
-def export_transactions_csv(user_id: int = Depends(require_user)) -> Response:
+_EXPORT_HEADERS = ["日期", "类型", "分类", "标题", "金额", "标签"]
+
+
+def _export_records(user_id: int) -> list[tuple]:
     with get_connection() as conn:
         rows = conn.execute(
             f"{_TRANSACTION_SELECT} WHERE t.user_id = ? ORDER BY t.date DESC, t.id DESC",
             (user_id,),
         ).fetchall()
         tags = _tags_by_transaction(conn, [int(row["id"]) for row in rows])
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(["日期", "类型", "分类", "标题", "金额", "标签"])
+    records = []
     for row in rows:
         tag_names = " ".join(tag.name for tag in tags.get(int(row["id"]), []))
-        writer.writerow(
-            [
+        records.append(
+            (
                 row["date"],
                 "收入" if row["type"] == "income" else "支出",
                 row["category_name"],
                 row["title"],
-                f"{_yuan_from_row(row):.2f}",
+                _cents_from_row(row),
                 tag_names,
-            ]
+            )
+        )
+    return records
+
+
+@app.get("/api/exports/transactions.csv")
+def export_transactions_csv(user_id: int = Depends(require_user)) -> Response:
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(_EXPORT_HEADERS)
+    for date_text, type_text, category, title, cents, tag_names in _export_records(user_id):
+        writer.writerow(
+            [date_text, type_text, category, title, f"{cents_to_yuan(cents):.2f}", tag_names]
         )
     body = ("\ufeff" + buffer.getvalue()).encode("utf-8")
     return Response(
         content=body,
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="transactions.csv"'},
+    )
+
+
+@app.get("/api/exports/transactions.xlsx")
+def export_transactions_xlsx(user_id: int = Depends(require_user)) -> Response:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "账单"
+    sheet.append(_EXPORT_HEADERS)
+    for date_text, type_text, category, title, cents, tag_names in _export_records(user_id):
+        sheet.append(
+            [date_text, type_text, category, title, cents_to_yuan(cents), tag_names]
+        )
+
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+    for column, width in {"A": 12, "B": 8, "C": 12, "D": 24, "E": 12, "F": 24}.items():
+        sheet.column_dimensions[column].width = width
+    for (cell,) in sheet.iter_rows(min_row=2, min_col=5, max_col=5):
+        cell.number_format = "0.00"
+    sheet.freeze_panes = "A2"
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return Response(
+        content=buffer.getvalue(),
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={"Content-Disposition": 'attachment; filename="transactions.xlsx"'},
     )
 
 

@@ -1,22 +1,29 @@
+import io
 import os
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+import auth
+import wechat
 
 _fd, _DB = tempfile.mkstemp(suffix=".db")
 os.close(_fd)
 os.environ["DATABASE_PATH"] = _DB
 
 from fastapi import HTTPException
+from openpyxl import load_workbook
 
-from auth import register_account, require_user
+from auth import delete_self, login_with_wechat, register_account, require_user
 from database import get_connection, init_db
 from main import (
     BudgetIn,
     CreateTransactionIn,
     category_report,
     create_transaction,
+    export_transactions_xlsx,
     transaction_summary,
     upsert_budget,
 )
@@ -185,6 +192,177 @@ class LedgerRulesTest(unittest.TestCase):
         self.assertIn("amount_cents", columns)
         self.assertEqual(expired, 0)
         self.assertGreater(count_before, 0)
+
+
+class AccountLifecycleTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        init_db()
+
+    def _expense_category(self, user_id: int) -> int:
+        with get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT id FROM categories
+                WHERE user_id = ? AND type = 'expense'
+                ORDER BY id LIMIT 1
+                """,
+                (user_id,),
+            ).fetchone()
+        return int(row["id"])
+
+    def test_registration_requires_invite_code(self):
+        os.environ["REGISTER_INVITE_CODE"] = "invite-123"
+        try:
+            with self.assertRaises(HTTPException) as caught:
+                register_account("invite_bad", "secret1", None, "wrong")
+            self.assertEqual(caught.exception.status_code, 403)
+            session = register_account("invite_ok", "secret1", None, "invite-123")
+            self.assertIn("token", session)
+        finally:
+            os.environ.pop("REGISTER_INVITE_CODE", None)
+
+    def test_registration_can_be_closed(self):
+        os.environ["REGISTER_ENABLED"] = "false"
+        try:
+            with self.assertRaises(HTTPException) as caught:
+                register_account("closed_user", "secret1", None)
+            self.assertEqual(caught.exception.status_code, 403)
+            self.assertEqual(caught.exception.detail, "注册已关闭")
+        finally:
+            os.environ.pop("REGISTER_ENABLED", None)
+
+    def test_delete_self_removes_all_data(self):
+        session = register_account("bye_user", "secret1", None)
+        user_id = int(session["user"]["id"])
+        token = session["token"]
+        create_transaction(
+            CreateTransactionIn(
+                title="待删除",
+                category_id=self._expense_category(user_id),
+                amount=12.5,
+                type="expense",
+                date="2026-03-10",
+            ),
+            user_id=user_id,
+        )
+
+        delete_self(user_id)
+
+        with get_connection() as conn:
+            for table, column in (
+                ("users", "id"),
+                ("sessions", "user_id"),
+                ("categories", "user_id"),
+                ("transactions", "user_id"),
+                ("items", "user_id"),
+                ("chat_messages", "user_id"),
+            ):
+                count = conn.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE {column} = ?",
+                    (user_id,),
+                ).fetchone()[0]
+                self.assertEqual(count, 0, f"{table} 仍有残留数据")
+        with self.assertRaises(HTTPException) as caught:
+            require_user(authorization=f"Bearer {token}")
+        self.assertEqual(caught.exception.status_code, 401)
+
+    def test_export_xlsx(self):
+        session = register_account("xlsx_user", "secret1", None)
+        user_id = int(session["user"]["id"])
+        create_transaction(
+            CreateTransactionIn(
+                title="导出测试",
+                category_id=self._expense_category(user_id),
+                amount=9.9,
+                type="expense",
+                date="2026-03-11",
+            ),
+            user_id=user_id,
+        )
+
+        response = export_transactions_xlsx(user_id=user_id)
+
+        self.assertEqual(response.status_code, 200)
+        workbook = load_workbook(io.BytesIO(response.body))
+        sheet = workbook.active
+        self.assertEqual(
+            [cell.value for cell in sheet[1]],
+            ["日期", "类型", "分类", "标题", "金额", "标签"],
+        )
+        self.assertEqual(sheet.max_row, 2)
+        self.assertEqual(sheet["D2"].value, "导出测试")
+        self.assertAlmostEqual(sheet["E2"].value, 9.9)
+
+
+class _FakeWechatResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._payload
+
+
+class WechatLoginTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        init_db()
+
+    def test_requires_configuration(self):
+        with patch.dict(os.environ, {"WX_APPID": "", "WX_SECRET": ""}):
+            with self.assertRaises(HTTPException) as caught:
+                login_with_wechat("any-code")
+        self.assertEqual(caught.exception.status_code, 503)
+
+    def test_creates_and_reuses_user(self):
+        payload = {"openid": "openid-test-001", "session_key": "should-not-leak"}
+        with patch.dict(
+            os.environ, {"WX_APPID": "wx-test", "WX_SECRET": "secret"}
+        ), patch.object(
+            wechat.httpx, "get", return_value=_FakeWechatResponse(payload)
+        ):
+            first = login_with_wechat("code-1")
+            second = login_with_wechat("code-2")
+
+        self.assertEqual(first["user"]["id"], second["user"]["id"])
+        self.assertEqual(
+            require_user(authorization=f"Bearer {first['token']}"),
+            first["user"]["id"],
+        )
+        with get_connection() as conn:
+            user = conn.execute(
+                "SELECT wx_openid FROM users WHERE id = ?",
+                (first["user"]["id"],),
+            ).fetchone()
+            category_count = conn.execute(
+                "SELECT COUNT(*) FROM categories WHERE user_id = ?",
+                (first["user"]["id"],),
+            ).fetchone()[0]
+        self.assertEqual(user["wx_openid"], "openid-test-001")
+        self.assertGreater(category_count, 0)
+
+    def test_rejects_invalid_code(self):
+        with patch.dict(
+            os.environ, {"WX_APPID": "wx-test", "WX_SECRET": "secret"}
+        ), patch.object(
+            wechat.httpx,
+            "get",
+            return_value=_FakeWechatResponse(
+                {"errcode": 40029, "errmsg": "invalid code"}
+            ),
+        ):
+            with self.assertRaises(HTTPException) as caught:
+                login_with_wechat("bad-code")
+        self.assertEqual(caught.exception.status_code, 401)
+
+    def test_auth_status_reports_wechat_configuration(self):
+        with patch.dict(os.environ, {"WX_APPID": "wx-test", "WX_SECRET": "secret"}):
+            self.assertTrue(auth.auth_status()["wechat_login_configured"])
+        with patch.dict(os.environ, {"WX_APPID": "", "WX_SECRET": ""}):
+            self.assertFalse(auth.auth_status()["wechat_login_configured"])
 
 
 def _budget(report, category_id):

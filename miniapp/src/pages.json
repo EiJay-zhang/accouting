@@ -1,0 +1,84 @@
+{
+  "pages": [
+    {
+      "path": "pages/login/index",
+      "style": {
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/home/index",
+      "style": {
+        "navigationBarTitleText": "记账",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/bills/index",
+      "style": {
+        "navigationBarTitleText": "账单",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/items/index",
+      "style": {
+        "navigationBarTitleText": "物品",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/report/index",
+      "style": {
+        "navigationBarTitleText": "报告",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/settings/index",
+      "style": {
+        "navigationBarTitleText": "我的"
+      }
+    },
+    {
+      "path": "pages/privacy/index",
+      "style": {
+        "navigationBarTitleText": "用户协议与隐私政策"
+      }
+    }
+  ],
+  "tabBar": {
+    "color": "#8B8BA3",
+    "selectedColor": "#4338CA",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "记账"
+      },
+      {
+        "pagePath": "pages/bills/index",
+        "text": "账单"
+      },
+      {
+        "pagePath": "pages/items/index",
+        "text": "物品"
+      },
+      {
+        "pagePath": "pages/report/index",
+        "text": "报告"
+      },
+      {
+        "pagePath": "pages/settings/index",
+        "text": "我的"
+      }
+    ]
+  },
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "记账",
+    "navigationBarBackgroundColor": "#F4F5FB",
+    "backgroundColor": "#F4F5FB"
+  }
+}

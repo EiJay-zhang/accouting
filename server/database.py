@@ -311,6 +311,19 @@ def _migrate_users_is_admin(conn: sqlite3.Connection) -> None:
             conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (first[0],))
 
 
+def _migrate_wechat(conn: sqlite3.Connection) -> None:
+    """给 users 表补微信 openid，用于小程序登录。"""
+    if "wx_openid" not in _column_names(conn, "users"):
+        conn.execute("ALTER TABLE users ADD COLUMN wx_openid TEXT")
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_wx_openid
+        ON users (wx_openid)
+        WHERE wx_openid IS NOT NULL
+        """
+    )
+
+
 def _migrate_items_transaction_id(conn: sqlite3.Connection) -> None:
     """物品和账单互相关联 + 物品分类直连 categories 表。
 
@@ -492,6 +505,7 @@ def init_db() -> Path:
         _migrate_budgets(conn)
         _migrate_items_transaction_id(conn)
         _migrate_users_is_admin(conn)
+        _migrate_wechat(conn)
         _backfill_item_category_ids(conn)
         _sync_item_expense_transactions(conn)
         conn.executescript(_read_sql("seed_categories.sql"))
