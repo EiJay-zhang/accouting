@@ -302,6 +302,8 @@ VITE_API_BASE_URL=https://api.example.com
 
 后端 `server/.env` 配置 `WX_APPID`、`WX_SECRET` 后重启服务；`miniapp/src/manifest.json` 中的 `mp-weixin.appid` 改成真实小程序 AppID。
 
+上线前的资质、备案、域名、审核步骤见 [小程序上线清单](docs/miniapp-launch-checklist.md)。
+
 ---
 
 ## 账号与登录
