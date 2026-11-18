@@ -15,10 +15,12 @@ import type {
   TransactionType,
 } from '@/models/types'
 import { setPendingEdit } from '@/stores/transaction-edit'
+import { consumeBillsFilter, type BillsFilter } from '@/stores/bills-filter'
 import { showConfirm } from '@/utils/confirm'
 import {
   addDaysISO,
   addMonths,
+  parseISODate,
   rangeLabel,
   startOfWeekISO,
   todayISO,
@@ -131,11 +133,27 @@ const categoryLabel = computed(() => {
 })
 
 onShow(() => {
+  const filter = consumeBillsFilter()
+  if (filter) {
+    applyFilter(filter)
+  }
   if (!categories.value.length) {
     void loadCategories()
   }
   void load()
 })
+
+function applyFilter(filter: BillsFilter): void {
+  span.value = filter.period
+  const date = parseISODate(filter.start)
+  year.value = date.getFullYear()
+  month.value = date.getMonth() + 1
+  rangeStart.value = filter.start
+  rangeEnd.value = filter.end
+  categoryId.value = filter.categoryId
+  typeFilter.value = filter.type
+  keyword.value = ''
+}
 
 onPullDownRefresh(async () => {
   await load()

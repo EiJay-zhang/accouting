@@ -59,3 +59,40 @@ export interface MonthlySummary {
   expenseCents: number
   totalCents: number
 }
+
+export type ReportPeriod = 'week' | 'month' | 'year'
+
+export interface CategoryReportItem {
+  category: Category
+  incomeCents: number
+  expenseCents: number
+  transactionCount: number
+  budgetCents: number | null
+}
+
+export interface CategoryReport {
+  period: ReportPeriod
+  year: number
+  month: number
+  start: string
+  end: string
+  incomeCents: number
+  expenseCents: number
+  totalCents: number
+  categories: CategoryReportItem[]
+}
+
+export interface TrendPoint {
+  year: number
+  month: number
+  day: number
+  label: string
+  incomeCents: number
+  expenseCents: number
+}
+
+export interface TrendReport {
+  points: TrendPoint[]
+  incomeDeltaCents: number
+  expenseDeltaCents: number
+}
