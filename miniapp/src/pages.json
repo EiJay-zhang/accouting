@@ -34,6 +34,12 @@
       }
     },
     {
+      "path": "pages/item-edit/index",
+      "style": {
+        "navigationBarTitleText": "物品"
+      }
+    },
+    {
       "path": "pages/report/index",
       "style": {
         "navigationBarTitleText": "报告",

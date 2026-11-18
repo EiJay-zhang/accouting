@@ -60,6 +60,36 @@ export interface MonthlySummary {
   totalCents: number
 }
 
+export type ItemStatus = 'in_use' | 'idle' | 'sold' | 'retired'
+
+export interface Item {
+  id: number
+  name: string
+  categoryId: number | null
+  category: string
+  categoryIcon: string | null
+  categoryColor: string | null
+  amountCents: number
+  purchaseDate: string
+  daysUsed: number
+  purpose: string
+  status: ItemStatus
+  soldAmountCents: number | null
+  soldDate: string | null
+  heldDays: number | null
+  profitCents: number | null
+  warrantyUntil: string | null
+  note: string
+}
+
+export interface ItemSummary {
+  count: number
+  inUseCount: number
+  totalAmountCents: number
+  dailyCostCents: number
+  totalProfitCents: number
+}
+
 export type ReportPeriod = 'week' | 'month' | 'year'
 
 export interface CategoryReportItem {
