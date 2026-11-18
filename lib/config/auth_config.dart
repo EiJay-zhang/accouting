@@ -17,6 +17,9 @@ class AuthConfig {
   static const _userKey = 'auth_user';
   static final ValueNotifier<AuthSession?> session = ValueNotifier(null);
 
+  /// 当 API 返回 401（token 过期）时置 true，AuthGate 监听到后给用户提示
+  static final ValueNotifier<bool> expired = ValueNotifier(false);
+
   static String? get token => session.value?.token;
 
   static Future<void> load() async {

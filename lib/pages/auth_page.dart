@@ -6,7 +6,9 @@ import '../config/auth_config.dart';
 import '../constants/app_colors.dart';
 
 class AuthPage extends StatefulWidget {
-  const AuthPage({super.key});
+  final String? message;
+
+  const AuthPage({super.key, this.message});
 
   @override
   State<AuthPage> createState() => _AuthPageState();
@@ -24,6 +26,8 @@ class _AuthPageState extends State<AuthPage> {
   @override
   void initState() {
     super.initState();
+    // 进入 AuthPage 后重置 expired 标记，避免反复提示
+    AuthConfig.expired.value = false;
     _loadStatus();
   }
 
@@ -35,7 +39,13 @@ class _AuthPageState extends State<AuthPage> {
         _hasUsers = hasUsers;
         if (!hasUsers) _registering = true;
       });
-    } catch (_) {}
+    } catch (_) {
+      // 无法判断状态时默认按已有用户处理（用户手动选择登录/注册也能继续）
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('连接服务器失败，请检查后端是否启动')),
+      );
+    }
   }
 
   @override
@@ -79,6 +89,28 @@ class _AuthPageState extends State<AuthPage> {
         child: ListView(
           padding: EdgeInsets.fromLTRB(24, 48, 24, 32),
           children: [
+            if (widget.message != null && widget.message!.isNotEmpty) ...[
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0x33FF9800),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.orange.shade800, size: 18),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        widget.message!,
+                        style: TextStyle(color: Colors.orange.shade900, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 16),
+            ],
             Center(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(22),

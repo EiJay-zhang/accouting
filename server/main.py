@@ -24,6 +24,7 @@ from auth import (
     login_account,
     logout_account,
     register_account,
+    require_admin,
     require_user,
     update_profile,
 )
@@ -198,6 +199,15 @@ class BudgetIn(BaseModel):
     year: int = Field(ge=2000, le=2100)
     month: int = Field(default=1, ge=1, le=12)
     amount: float = Field(ge=0, le=100000000)
+    scope: Literal["week", "month", "year"] = "month"
+    anchor: Optional[str] = None
+
+
+class BudgetDeleteIn(BaseModel):
+    """显式删除预算的请求体（语义更清晰，不必把 amount 设为 0）"""
+    category_id: int
+    year: int = Field(ge=2000, le=2100)
+    month: int = Field(default=1, ge=1, le=12)
     scope: Literal["week", "month", "year"] = "month"
     anchor: Optional[str] = None
 
@@ -547,19 +557,19 @@ def edit_me(payload: ProfileIn, user_id: int = Depends(require_user)) -> dict:
 
 
 @app.get("/api/users")
-def get_users(user_id: int = Depends(require_user)) -> list[dict]:
+def get_users(user_id: int = Depends(require_admin)) -> list[dict]:
     del user_id
     return list_accounts()
 
 
 @app.post("/api/users", status_code=201)
-def post_user(payload: AuthIn, user_id: int = Depends(require_user)) -> dict:
+def post_user(payload: AuthIn, user_id: int = Depends(require_admin)) -> dict:
     del user_id
     return create_account(payload.username, payload.password, payload.display_name)
 
 
 @app.delete("/api/users/{target_id}", status_code=204)
-def remove_user(target_id: int, user_id: int = Depends(require_user)) -> None:
+def remove_user(target_id: int, user_id: int = Depends(require_admin)) -> None:
     delete_account(user_id, target_id)
 
 
@@ -621,6 +631,11 @@ def update_category(
                 """,
                 (name, icon, payload.color, category_id, user_id),
             )
+            # 同步 items 表的 category 冗余字段
+            conn.execute(
+                "UPDATE items SET category = ? WHERE category_id = ? AND user_id = ?",
+                (name, category_id, user_id),
+            )
             conn.commit()
         except sqlite3.IntegrityError as exc:
             raise HTTPException(status_code=400, detail="该类型下已有同名分类") from exc
@@ -632,13 +647,22 @@ def update_category(
 def delete_category(category_id: int, user_id: int = Depends(require_user)) -> None:
     with get_connection() as conn:
         _category_by_id(conn, category_id, user_id)
-        used = conn.execute(
-            "SELECT COUNT(*) FROM transactions WHERE category_id = ?",
-            (category_id,),
+        used_tx = conn.execute(
+            "SELECT COUNT(*) FROM transactions WHERE category_id = ? AND user_id = ?",
+            (category_id, user_id),
         ).fetchone()[0]
-        if used:
+        if used_tx:
             raise HTTPException(status_code=400, detail="该分类下还有账单，无法删除")
-        conn.execute("DELETE FROM categories WHERE id = ?", (category_id,))
+        used_items = conn.execute(
+            "SELECT COUNT(*) FROM items WHERE category_id = ? AND user_id = ?",
+            (category_id, user_id),
+        ).fetchone()[0]
+        if used_items:
+            raise HTTPException(status_code=400, detail="该分类下还有物品，无法删除")
+        # 清理预算和标签（预算/标签是分类附属，删分类连带清除）
+        conn.execute("DELETE FROM budgets WHERE category_id = ?", (category_id,))
+        conn.execute("DELETE FROM tags WHERE category_id = ?", (category_id,))
+        conn.execute("DELETE FROM categories WHERE id = ? AND user_id = ?", (category_id, user_id))
         conn.commit()
 
 
@@ -732,6 +756,9 @@ def update_tag(
 def delete_tag(tag_id: int, user_id: int = Depends(require_user)) -> None:
     with get_connection() as conn:
         _tag_by_id(conn, tag_id, user_id)
+        conn.execute(
+            "DELETE FROM transaction_tags WHERE tag_id = ?", (tag_id,),
+        )
         conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
         conn.commit()
 
@@ -1148,7 +1175,10 @@ def items_summary(user_id: int = Depends(require_user)) -> ItemSummaryOut:
     profit_cents = 0
     for row in rows:
         cents = int(row["amount_cents"])
-        total_cents += cents
+        status = row["status"]
+        if status != "sold":
+            # 已出售的物品价值已转化为盈亏，不计入资产总价值
+            total_cents += cents
         if row["status"] == "in_use":
             in_use_count += 1
             used_days = max((today - date.fromisoformat(row["purchase_date"])).days, 1)
@@ -1547,6 +1577,10 @@ def delete_transaction(transaction_id: int, user_id: int = Depends(require_user)
             "UPDATE items SET transaction_id = NULL WHERE transaction_id = ? AND user_id = ?",
             (transaction_id, user_id),
         )
+        conn.execute(
+            "UPDATE items SET sold_transaction_id = NULL WHERE sold_transaction_id = ? AND user_id = ?",
+            (transaction_id, user_id),
+        )
         conn.commit()
 
 
@@ -1788,6 +1822,30 @@ def upsert_budget(payload: BudgetIn, user_id: int = Depends(require_user)) -> No
         conn.commit()
 
 
+@app.delete("/api/budgets", status_code=204)
+def delete_budget(payload: BudgetDeleteIn, user_id: int = Depends(require_user)) -> None:
+    """显式删除某分类某周期的预算，语义比 PUT(amount=0) 更清晰"""
+    period_key = _budget_period_key(BudgetIn(
+        category_id=payload.category_id,
+        year=payload.year,
+        month=payload.month,
+        scope=payload.scope,
+        anchor=payload.anchor,
+        amount=0,
+    ))
+    with get_connection() as conn:
+        # 通过 JOIN categories 限定当前用户（budgets 表本身没有 user_id）
+        conn.execute(
+            """
+            DELETE FROM budgets
+            WHERE category_id = ? AND scope = ? AND period_key = ?
+              AND category_id IN (SELECT id FROM categories WHERE user_id = ?)
+            """,
+            (payload.category_id, payload.scope, period_key, user_id),
+        )
+        conn.commit()
+
+
 @app.get("/api/exports/transactions.csv")
 def export_transactions_csv(user_id: int = Depends(require_user)) -> Response:
     with get_connection() as conn:
@@ -1861,6 +1919,7 @@ CREATE TABLE items (
     transaction_id INTEGER,
     sold_transaction_id INTEGER,
     name TEXT NOT NULL,
+    category_id INTEGER,
     category TEXT NOT NULL,
     amount_cents INTEGER NOT NULL,
     purchase_date TEXT NOT NULL,
@@ -1941,7 +2000,7 @@ def export_backup(user_id: int = Depends(require_user)) -> Response:
                 ).fetchall()
                 items = conn.execute(
                     """
-                    SELECT id, transaction_id, sold_transaction_id, name, category,
+                    SELECT id, transaction_id, sold_transaction_id, name, category_id, category,
                            amount_cents, purchase_date, purpose, status,
                            sold_amount_cents, sold_date, warranty_until, note, created_at
                     FROM items WHERE user_id = ? ORDER BY id
@@ -1991,10 +2050,10 @@ def export_backup(user_id: int = Depends(require_user)) -> Response:
                 dest,
                 """
                 INSERT INTO items
-                    (id, transaction_id, sold_transaction_id, name, category,
+                    (id, transaction_id, sold_transaction_id, name, category_id, category,
                      amount_cents, purchase_date, purpose, status,
                      sold_amount_cents, sold_date, warranty_until, note, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 items,
             )
@@ -2115,6 +2174,13 @@ def chat_status(user_id: int = Depends(require_user)) -> dict:
         "provider": provider,
         "model": model,
         "providers": providers,
+        "suggestions": [
+            "分析我本月支出结构",
+            "有哪些地方可以省钱？",
+            "帮我总结本月收支情况",
+            "我的消费习惯有什么特点？",
+            "帮我记一笔午餐 28 元",
+        ],
     }
 
 

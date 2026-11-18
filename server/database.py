@@ -298,6 +298,19 @@ def _migrate_budgets(conn: sqlite3.Connection) -> None:
         conn.isolation_level = previous_isolation
 
 
+def _migrate_users_is_admin(conn: sqlite3.Connection) -> None:
+    """给 users 表补 is_admin 列。老库第一个注册用户自动设为 admin。"""
+    columns = _column_names(conn, "users")
+    if "is_admin" not in columns:
+        conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+        # 第一个注册用户升级为 admin（按 created_at 最早）
+        first = conn.execute(
+            "SELECT id FROM users ORDER BY created_at ASC, id ASC LIMIT 1"
+        ).fetchone()
+        if first:
+            conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (first[0],))
+
+
 def _migrate_items_transaction_id(conn: sqlite3.Connection) -> None:
     """物品和账单互相关联 + 物品分类直连 categories 表。
 
@@ -478,6 +491,7 @@ def init_db() -> Path:
         _migrate_amount_cents(conn)
         _migrate_budgets(conn)
         _migrate_items_transaction_id(conn)
+        _migrate_users_is_admin(conn)
         _backfill_item_category_ids(conn)
         _sync_item_expense_transactions(conn)
         conn.executescript(_read_sql("seed_categories.sql"))

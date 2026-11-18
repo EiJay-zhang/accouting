@@ -47,53 +47,11 @@ class ChatModelConfig {
   static const _providerKey = 'chat_provider';
   static const _modelKey = 'chat_model';
 
-  static const fallbackProviders = [
-    ChatProviderOption(
-      id: 'deepseek',
-      name: 'DeepSeek',
-      available: true,
-      configured: true,
-      hint: '',
-      keyEnv: 'DEEPSEEK_API_KEY',
-      models: [
-        ChatModelOption(
-          id: 'deepseek-flash',
-          name: 'DeepSeek Flash',
-          description: '回答更快，适合日常记账问答',
-        ),
-        ChatModelOption(
-          id: 'deepseek-v4-pro',
-          name: 'DeepSeek V4 Pro',
-          description: '分析更细，适合复杂的收支建议',
-        ),
-      ],
-    ),
-    ChatProviderOption(
-      id: 'kimi',
-      name: 'Kimi',
-      available: true,
-      configured: false,
-      hint: '未配置密钥',
-      keyEnv: 'KIMI_API_KEY',
-      models: [
-        ChatModelOption(
-          id: 'kimi-k2.6',
-          name: 'Kimi K2.6',
-          description: '回答更快，适合日常记账问答',
-        ),
-        ChatModelOption(
-          id: 'kimi-k3.1-pro',
-          name: 'Kimi K3.1 Pro',
-          description: '分析更细，适合复杂的收支建议',
-        ),
-      ],
-    ),
-  ];
-
+  // 初始为空列表，完全依赖后端 /api/chat/status 返回的 provider catalog
   static final ValueNotifier<List<ChatProviderOption>> providers =
-      ValueNotifier(fallbackProviders);
+      ValueNotifier(const []);
   static final ValueNotifier<ChatSelection> selection = ValueNotifier(
-    const ChatSelection(providerId: 'deepseek', modelId: 'deepseek-flash'),
+    const ChatSelection(providerId: '', modelId: ''),
   );
 
   static ChatProviderOption? get selectedProvider {
@@ -104,24 +62,36 @@ class ChatModelConfig {
     return null;
   }
 
-  static ChatModelOption get current {
+  /// 从当前 providers 列表中找到当前选择的模型；若找不到则返回第一个可用模型
+  static ChatModelOption? get current {
     final selected = selection.value;
+    // 精确匹配
     for (final provider in providers.value) {
       if (provider.id != selected.providerId) continue;
       for (final model in provider.models) {
         if (model.id == selected.modelId) return model;
       }
     }
-    return fallbackProviders.first.models.first;
+    // 回退：第一个可用 provider 的第一个模型
+    for (final provider in providers.value) {
+      if (provider.available && provider.models.isNotEmpty) {
+        return provider.models.first;
+      }
+    }
+    return null;
   }
 
   static Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = ChatSelection(
-      providerId: prefs.getString(_providerKey) ?? 'deepseek',
-      modelId: prefs.getString(_modelKey) ?? fallbackProviders.first.models.first.id,
+      providerId: prefs.getString(_providerKey) ?? '',
+      modelId: prefs.getString(_modelKey) ?? '',
     );
-    selection.value = _known(saved, providers.value) ?? selection.value;
+    // 如果后端 providers 已加载，立即校验
+    final resolved = _known(saved, providers.value);
+    if (resolved != null) {
+      selection.value = resolved;
+    }
   }
 
   static Future<void> save(String providerId, String modelId) async {
@@ -136,6 +106,7 @@ class ChatModelConfig {
     selection.value = resolved;
   }
 
+  /// 应用后端返回的 providers 列表，并校验当前选中是否有效
   static void applyProviders(List<ChatProviderOption> next) {
     if (next.isEmpty) return;
     providers.value = next;
@@ -146,12 +117,15 @@ class ChatModelConfig {
   }
 
   static ChatSelection? _known(ChatSelection saved, List<ChatProviderOption> catalog) {
-    for (final provider in catalog) {
-      if (!provider.available || provider.id != saved.providerId) continue;
-      for (final model in provider.models) {
-        if (model.id == saved.modelId) return saved;
+    if (saved.providerId.isNotEmpty && saved.modelId.isNotEmpty) {
+      for (final provider in catalog) {
+        if (!provider.available || provider.id != saved.providerId) continue;
+        for (final model in provider.models) {
+          if (model.id == saved.modelId) return saved;
+        }
       }
     }
+    // 回退：第一个可用 provider 的第一个模型
     for (final provider in catalog) {
       if (provider.available && provider.models.isNotEmpty) {
         return ChatSelection(providerId: provider.id, modelId: provider.models.first.id);

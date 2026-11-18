@@ -76,9 +76,18 @@ class _ItemEditPageState extends State<ItemEditPage> {
       if (_categoryId == null && cats.isNotEmpty) {
         setState(() => _categoryId = cats.first.id);
       }
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
       setState(() => _categoriesLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('分类加载失败，请检查后端服务后重试'),
+          action: SnackBarAction(
+            label: '重试',
+            onPressed: _loadCategories,
+          ),
+        ),
+      );
     }
   }
 
@@ -350,7 +359,29 @@ class _ItemEditPageState extends State<ItemEditPage> {
                 options: ItemStatus.values,
                 selected: _status,
                 labelOf: (value) => value.label,
-                onSelect: (value) {
+                onSelect: (value) async {
+                  // 切换到 sold 时弹确认（会自动生成收入账单）
+                  if (value == ItemStatus.sold && _status != ItemStatus.sold) {
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (c) => AlertDialog(
+                        title: Text('确认标记为"已出售"？'),
+                        content: Text('保存后将自动生成一条收入账单（出售金额），且该物品将从"物品总价值"中排除。'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(c, false),
+                            child: Text('取消'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(c, true),
+                            child: Text('确认'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirm != true) return;
+                  }
+                  if (!mounted) return;
                   setState(() {
                     _status = value;
                     if (value != ItemStatus.sold) {

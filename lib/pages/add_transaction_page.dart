@@ -153,7 +153,12 @@ class _AddTransactionPageState extends State<AddTransactionPage> {
       final tags = await _service.getTags();
       if (!mounted) return;
       setState(() => _tags = tags);
-    } catch (_) {}
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('标签加载失败，请检查网络')),
+      );
+    }
   }
 
   @override

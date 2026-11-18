@@ -23,12 +23,7 @@ class _AiChatPageState extends State<AiChatPage> {
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessage> _messages = [];
-  final List<String> _suggestions = [
-    '分析我本月支出结构',
-    '有哪些地方可以省钱？',
-    '帮我总结本月收支情况',
-    '我的消费习惯有什么特点？',
-  ];
+  final List<String> _suggestions = [];
 
   bool _loading = false;
   bool _includeContext = true;
@@ -63,6 +58,13 @@ class _AiChatPageState extends State<AiChatPage> {
       final status = await _chatApi.fetchStatus();
       if (!mounted) return;
       ChatModelConfig.applyProviders(status.providers);
+      if (status.suggestions.isNotEmpty) {
+        setState(() {
+          _suggestions
+            ..clear()
+            ..addAll(status.suggestions);
+        });
+      }
       setState(() => _checkingStatus = false);
     } catch (_) {
       if (!mounted) return;

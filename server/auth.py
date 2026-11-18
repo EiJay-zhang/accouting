@@ -6,7 +6,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional
 
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 
 from database import get_connection
 
@@ -83,6 +83,7 @@ def _user_out(row) -> dict:
         "username": row["username"],
         "display_name": row["display_name"],
         "created_at": row["created_at"],
+        "is_admin": bool(row["is_admin"]) if "is_admin" in row.keys() else False,
     }
 
 
@@ -131,13 +132,16 @@ def _seed_account(conn, user_id: int) -> None:
 
 def _insert_user(conn, username: str, password: str, display_name: str):
     now = datetime.now().isoformat(timespec="seconds")
+    # 注册前若库为空，首个用户自动成为 admin
+    existing = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    is_admin = 1 if existing == 0 else 0
     try:
         cursor = conn.execute(
             """
-            INSERT INTO users (username, password_hash, display_name, created_at)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO users (username, password_hash, display_name, created_at, is_admin)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (username, hash_password(password), display_name, now),
+            (username, hash_password(password), display_name, now, is_admin),
         )
     except sqlite3.IntegrityError as exc:
         raise HTTPException(status_code=400, detail="用户名已存在") from exc
@@ -223,6 +227,17 @@ def require_user(authorization: Optional[str] = Header(default=None)) -> int:
     return int(row["user_id"])
 
 
+def require_admin(user_id: int = Depends(require_user)) -> int:
+    """确保当前登录用户是 admin，否则 403。"""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT is_admin FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if row is None or not row["is_admin"]:
+            raise HTTPException(status_code=403, detail="无权限执行此操作")
+    return user_id
+
+
 def bearer_token(authorization: Optional[str]) -> str:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="请先登录")
@@ -303,10 +318,28 @@ def delete_account(actor_id: int, target_id: int) -> None:
         row = conn.execute("SELECT id FROM users WHERE id = ?", (target_id,)).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="账号不存在")
+        # 按外键依赖顺序清理，避免悬挂数据
         conn.execute("DELETE FROM sessions WHERE user_id = ?", (target_id,))
         conn.execute("DELETE FROM chat_messages WHERE user_id = ?", (target_id,))
+        conn.execute(
+            "DELETE FROM transaction_tags WHERE transaction_id IN "
+            "(SELECT id FROM transactions WHERE user_id = ?)",
+            (target_id,),
+        )
         conn.execute("DELETE FROM transactions WHERE user_id = ?", (target_id,))
         conn.execute("DELETE FROM items WHERE user_id = ?", (target_id,))
+        # tags 依赖 categories
+        conn.execute(
+            "DELETE FROM tags WHERE category_id IN "
+            "(SELECT id FROM categories WHERE user_id = ?)",
+            (target_id,),
+        )
+        # budgets 依赖 categories
+        conn.execute(
+            "DELETE FROM budgets WHERE category_id IN "
+            "(SELECT id FROM categories WHERE user_id = ?)",
+            (target_id,),
+        )
         conn.execute("DELETE FROM categories WHERE user_id = ?", (target_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (target_id,))
         conn.commit()

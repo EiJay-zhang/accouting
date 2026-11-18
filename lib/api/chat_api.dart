@@ -75,12 +75,14 @@ class ChatStatus {
   final String provider;
   final String model;
   final List<ChatProviderOption> providers;
+  final List<String> suggestions;
 
   const ChatStatus({
     required this.configured,
     required this.provider,
     required this.model,
     required this.providers,
+    this.suggestions = const [],
   });
 
   factory ChatStatus.fromJson(Map<String, dynamic> json) {
@@ -90,12 +92,17 @@ class ChatStatus {
             .whereType<Map>()
             .map((item) => _providerFromJson(Map<String, dynamic>.from(item)))
             .toList()
-        : ChatModelConfig.fallbackProviders;
+        : const <ChatProviderOption>[];
+    final rawSuggestions = json['suggestions'];
+    final suggestions = rawSuggestions is List
+        ? rawSuggestions.whereType<String>().toList()
+        : const <String>[];
     return ChatStatus(
-      configured: json['configured'] as bool,
-      provider: json['provider'] as String? ?? 'deepseek',
-      model: json['model'] as String? ?? 'deepseek-flash',
-      providers: providers.isEmpty ? ChatModelConfig.fallbackProviders : providers,
+      configured: json['configured'] as bool? ?? false,
+      provider: json['provider'] as String? ?? '',
+      model: json['model'] as String? ?? '',
+      providers: providers,
+      suggestions: suggestions,
     );
   }
 }

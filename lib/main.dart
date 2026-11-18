@@ -51,10 +51,15 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<AuthSession?>(
-      valueListenable: AuthConfig.session,
-      builder: (context, session, _) {
-        if (session == null) return const AuthPage();
+    return ListenableBuilder(
+      listenable: Listenable.merge([AuthConfig.session, AuthConfig.expired]),
+      builder: (context, _) {
+        final session = AuthConfig.session.value;
+        if (session == null) {
+          return AuthPage(
+            message: AuthConfig.expired.value ? '登录已过期，请重新登录' : null,
+          );
+        }
         return MainShell(key: ValueKey(session.user.id));
       },
     );
@@ -72,13 +77,13 @@ class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
   final GlobalKey<HomePageState> _homePageKey = GlobalKey<HomePageState>();
   final GlobalKey<BillsPageState> _billsPageKey = GlobalKey<BillsPageState>();
-  final GlobalKey<ReportPageState> _reportPageKey =
-      GlobalKey<ReportPageState>();
+  final GlobalKey<ReportPageState> _reportPageKey = GlobalKey<ReportPageState>();
+  final GlobalKey<ItemsPageState> _itemsPageKey = GlobalKey<ItemsPageState>();
 
   late final List<Widget> _pages = [
     HomePage(key: _homePageKey, onDataChanged: _refreshAllPages),
     BillsPage(key: _billsPageKey, onDataChanged: _refreshAllPages),
-    ItemsPage(onDataChanged: _refreshAllPages),
+    ItemsPage(key: _itemsPageKey, onDataChanged: _refreshAllPages),
     ReportPage(key: _reportPageKey, onOpenCategory: _openCategoryBills),
     SettingsPage(
       onApiConfigChanged: _refreshAllPages,
@@ -119,6 +124,7 @@ class _MainShellState extends State<MainShell> {
   void _refreshAllPages() {
     _homePageKey.currentState?.refresh();
     _billsPageKey.currentState?.refresh();
+    _itemsPageKey.currentState?.refresh();
     _reportPageKey.currentState?.refresh();
   }
 

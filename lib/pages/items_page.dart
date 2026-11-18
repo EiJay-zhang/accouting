@@ -15,10 +15,10 @@ class ItemsPage extends StatefulWidget {
   const ItemsPage({super.key, this.onDataChanged});
 
   @override
-  State<ItemsPage> createState() => _ItemsPageState();
+  State<ItemsPage> createState() => ItemsPageState();
 }
 
-class _ItemsPageState extends State<ItemsPage> {
+class ItemsPageState extends State<ItemsPage> {
   final ItemApi _api = ItemApi();
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchTimer;
@@ -45,6 +45,14 @@ class _ItemsPageState extends State<ItemsPage> {
     );
     final summary = await _api.fetchSummary();
     return _ItemsData(items: items, summary: summary);
+  }
+
+  /// 对外暴露的刷新入口，供 MainShell 跨 Tab 调用
+  void refresh() {
+    if (!mounted) return;
+    setState(() {
+      _dataFuture = _load();
+    });
   }
 
   void _reload() {

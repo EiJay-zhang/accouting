@@ -111,7 +111,12 @@ class BillsPageState extends State<BillsPage> {
       final categories = await _service.getCategories();
       if (!mounted) return;
       setState(() => _categories = categories);
-    } catch (_) {}
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('分类加载失败，请检查网络')),
+      );
+    }
   }
 
   void _changeMonth(int delta) {

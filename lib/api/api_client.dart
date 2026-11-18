@@ -140,6 +140,7 @@ class ApiClient {
 
   String _errorMessage(http.Response response) {
     if (response.statusCode == 401 && AuthConfig.token != null) {
+      AuthConfig.expired.value = true;
       AuthConfig.clear();
     }
     String message = response.reasonPhrase ?? 'Request failed';
