@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import { downloadTransactionsXlsx } from '@/api/export'
 import { deleteAccount, logout, session } from '@/stores/session'
 import { errorMessage } from '@/utils/error'
 import { showConfirm } from '@/utils/confirm'
@@ -15,8 +16,43 @@ const initial = computed(() => {
   return name ? Array.from(name)[0].toUpperCase() : '?'
 })
 
+let exporting = false
+
 function openPage(url: string): void {
   uni.navigateTo({ url })
+}
+
+async function handleExport(): Promise<void> {
+  if (exporting) {
+    return
+  }
+  exporting = true
+  uni.showLoading({ title: '导出中…', mask: true })
+  try {
+    const filePath = await downloadTransactionsXlsx()
+    uni.hideLoading()
+    // #ifdef H5
+    const link = document.createElement('a')
+    link.href = filePath
+    link.download = 'transactions.xlsx'
+    link.click()
+    // #endif
+    // #ifndef H5
+    uni.openDocument({
+      filePath,
+      fileType: 'xlsx',
+      showMenu: true,
+      fail: () => {
+        uni.showToast({ title: '文件已下载，但无法打开', icon: 'none' })
+      },
+    })
+    // #endif
+  } catch (err) {
+    uni.hideLoading()
+    uni.showToast({ title: errorMessage(err), icon: 'none' })
+  } finally {
+    exporting = false
+  }
 }
 
 async function handleLogout(): Promise<void> {
@@ -111,6 +147,24 @@ async function submitDeleteAccount(): Promise<void> {
           <view class="menu__text">
             <text class="menu__label">标签设置</text>
             <text class="menu__hint">标签会记在账单上，方便搜索</text>
+          </view>
+          <text class="menu__arrow">›</text>
+        </view>
+        <view class="menu__divider" />
+        <view class="menu__item" @tap="openPage('/pages/bill-import/index')">
+          <view class="menu__icon">📥</view>
+          <view class="menu__text">
+            <text class="menu__label">导入账单</text>
+            <text class="menu__hint">从微信聊天选择支付宝 / 微信 / 银行账单文件</text>
+          </view>
+          <text class="menu__arrow">›</text>
+        </view>
+        <view class="menu__divider" />
+        <view class="menu__item" @tap="handleExport">
+          <view class="menu__icon">📤</view>
+          <view class="menu__text">
+            <text class="menu__label">导出 XLSX</text>
+            <text class="menu__hint">导出全部账单，可打开或转发给好友</text>
           </view>
           <text class="menu__arrow">›</text>
         </view>

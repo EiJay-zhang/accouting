@@ -37,6 +37,82 @@ function handleUnauthorized(): void {
   }
 }
 
+export interface UploadOptions {
+  url: string
+  filePath: string
+  name?: string
+  formData?: Record<string, string>
+  auth?: boolean
+}
+
+export function upload<T>(options: UploadOptions): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const token = uni.getStorageSync(STORAGE_KEYS.token)
+    uni.uploadFile({
+      url: buildUrl(options.url),
+      filePath: options.filePath,
+      name: options.name || 'file',
+      formData: options.formData,
+      timeout: 60000,
+      header:
+        options.auth !== false && token
+          ? { Authorization: `Bearer ${token}` }
+          : {},
+      success: (response) => {
+        const status = response.statusCode
+        let payload: unknown = response.data
+        if (typeof response.data === 'string') {
+          try {
+            payload = JSON.parse(response.data)
+          } catch {
+            payload = null
+          }
+        }
+        if (status >= 200 && status < 300) {
+          resolve(payload as T)
+          return
+        }
+        if (status === 401) {
+          handleUnauthorized()
+        }
+        const detail = (payload as { detail?: string } | null)?.detail
+        reject(new ApiError(detail || `上传失败（${status}）`, status))
+      },
+      fail: () => {
+        reject(new ApiError('网络异常，请检查网络后重试', 0))
+      },
+    })
+  })
+}
+
+export function download(options: {
+  url: string
+  query?: Record<string, QueryValue>
+}): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const token = uni.getStorageSync(STORAGE_KEYS.token)
+    uni.downloadFile({
+      url: buildUrl(options.url, options.query),
+      timeout: 60000,
+      header: token ? { Authorization: `Bearer ${token}` } : {},
+      success: (response) => {
+        const status = response.statusCode
+        if (status >= 200 && status < 300) {
+          resolve(response.tempFilePath)
+          return
+        }
+        if (status === 401) {
+          handleUnauthorized()
+        }
+        reject(new ApiError(`下载失败（${status}）`, status))
+      },
+      fail: () => {
+        reject(new ApiError('下载失败，请检查网络后重试', 0))
+      },
+    })
+  })
+}
+
 export function request<T>(options: RequestOptions): Promise<T> {
   return new Promise((resolve, reject) => {
     const token = uni.getStorageSync(STORAGE_KEYS.token)

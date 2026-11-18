@@ -18,6 +18,7 @@
 | 层级 | 技术 |
 |------|------|
 | 客户端 | Flutter (Dart) + fl_chart |
+| 小程序 | uni-app（Vue 3 + TypeScript + Vite） |
 | 后端 | FastAPI + SQLite |
 | 通信 | REST API / JSON，Bearer Token 鉴权 |
 | AI | DeepSeek、Kimi（Moonshot），由后端代理调用 |
@@ -47,6 +48,8 @@ account/
 │   ├── sql/                 # 建表、默认分类、默认标签、示例数据
 │   ├── requirements.txt     # Python 依赖
 │   └── account.db           # 默认数据库文件（可用 DATABASE_PATH 改位置）
+├── miniapp/                 # 微信小程序（uni-app + Vue 3 + TypeScript）
+│   └── src/                 # pages / api / stores / components
 ├── docs/
 │   └── backend-deploy.md    # 服务器部署（systemd + Nginx + HTTPS）
 ├── scripts/
@@ -58,6 +61,8 @@ account/
 
 - **Flutter SDK** 3.12+（Dart SDK `^3.12.2`）
 - **Python** 3.9+
+- **Node.js** 18+（小程序）
+- **微信开发者工具**（预览小程序）
 - **curl**（用于验证接口，可选）
 
 > 运行 iOS / macOS 原生版需要 Xcode。Web 调试无需 Xcode，推荐使用。
@@ -251,6 +256,51 @@ flutter build ios --release --dart-define=API_BASE_URL=http://192.168.1.100:8000
 - AI 对话依赖后端 `server/.env` 中的密钥，与运行平台无关
 - 本机开发默认允许 HTTP 明文请求（Android `usesCleartextTraffic`、iOS 本地网络例外已配置）
 - 公网部署请参考 [docs/backend-deploy.md](docs/backend-deploy.md)
+
+---
+
+## 小程序版（uni-app）
+
+`miniapp/` 是微信小程序客户端，复用同一套后端接口，Flutter 客户端保持可用。
+
+### 运行
+
+```bash
+cd miniapp
+npm install
+npm run dev:h5        # 浏览器调试，打开 http://127.0.0.1:5173
+npm run dev:mp-weixin # 监听编译，产物在 dist/dev/mp-weixin
+npm run type-check    # TypeScript 类型检查
+```
+
+用微信开发者工具选择「导入项目」，目录选 `miniapp/dist/dev/mp-weixin`。生产构建：
+
+```bash
+npm run build:mp-weixin
+# 产物在 miniapp/dist/build/mp-weixin，导入微信开发者工具后上传
+```
+
+### 后端地址
+
+默认指向 `http://127.0.0.1:8000`，在 `miniapp/.env.development` / `miniapp/.env.production` 中修改：
+
+```bash
+VITE_API_BASE_URL=https://api.example.com
+```
+
+真机调试时改成电脑局域网 IP，并在微信开发者工具中关闭「校验合法域名」（仅开发）。
+
+### 功能范围
+
+- 登录：后端配置微信登录后显示「微信一键登录」，否则使用账号密码登录
+- 记账、账单、物品、报告、分类 / 标签管理、多账号管理、隐私政策
+- 账单导入：只能从微信聊天或收藏选择 CSV / XLSX 文件，先发送到任意聊天即可
+- 导出：我的 → 导出 XLSX，下载后可直接打开或转发
+- 首版不包含 AI 对话和整库 `.db` 备份下载
+
+### 微信登录配置
+
+后端 `server/.env` 配置 `WX_APPID`、`WX_SECRET` 后重启服务；`miniapp/src/manifest.json` 中的 `mp-weixin.appid` 改成真实小程序 AppID。
 
 ---
 

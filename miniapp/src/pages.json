@@ -71,6 +71,12 @@
       }
     },
     {
+      "path": "pages/bill-import/index",
+      "style": {
+        "navigationBarTitleText": "导入账单"
+      }
+    },
+    {
       "path": "pages/privacy/index",
       "style": {
         "navigationBarTitleText": "用户协议与隐私政策"
